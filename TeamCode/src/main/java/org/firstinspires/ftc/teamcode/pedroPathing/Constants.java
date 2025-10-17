@@ -32,6 +32,8 @@ public class Constants {
             .IMU_HardwareMapName("imu")
             .forwardPodY(8.0) // find your offsets - robotsetting https://pedropathing.com/docs/pathing/tuning/localization/two-wheel
             .strafePodX(8.0) // find your offsets - robotsetting https://pedropathing.com/docs/pathing/tuning/localization/two-wheel
+            .forwardTicksToInches(0.000766990394)
+            .strafeTicksToInches(0.000766990394)
             .IMU_Orientation(
                     new RevHubOrientationOnRobot(
                             RevHubOrientationOnRobot.LogoFacingDirection.UP,
