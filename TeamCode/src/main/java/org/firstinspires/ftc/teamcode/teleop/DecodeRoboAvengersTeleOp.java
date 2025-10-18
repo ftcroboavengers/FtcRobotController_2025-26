@@ -1,52 +1,8 @@
 package org.firstinspires.ftc.teamcode.teleop;
 
-/*
- * 2025 DecodeRi3D TeleOp — RoboAvengers
- * - Mecanum drive (field-centric w/ IMU)
- * - Intake motor
- * - Dual launchers (velocity control) + dual feeder CRServos
- * - Diverter servo (left/right)
- * - Distance sensor (optional stop/telemetry)
- * - AprilTag via VisionPortal
- *
- * This OpMode is designed to work with either of two common naming schemes:
- *  A) "front_left_drive", "front_right_drive", "back_left_drive", "back_right_drive"
- *     (matches DecodeRi3D reference naming)
- *  B) "frontLeftMotor", "frontRightMotor", "backLeftMotor", "backRightMotor"
- *     (matches your 2024 code)
- *
- * Also attempts to map optional peripherals if present:
- *  - Intake motor:        "intake"
- *  - Launch motors:       "left_launcher", "right_launcher" (DcMotorEx)
- *  - Feeder CRServos:     "left_feeder", "right_feeder"
- *  - Diverter Servo:      "diverter"
- *  - Distance sensor:     "frontDistance" (or any DistanceSensor you wire and rename here)
- *  - Camera (AprilTag):   "Webcam 1"
- *
- * GAMEPAD LAYOUT (suggested)
- *  Driver (gamepad1):
- *   - Left stick:  strafe (x), forward/back (y)
- *   - Right stick x: rotate
- *   - X: toggle field-centric on/off
- *   - Y: zero heading (recalibrate field-centric yaw)
- *   - Right bumper: fast mode (1.0)
- *   - Left bumper:  slow mode (0.4)
- *
- *  Operator (gamepad2):
- *   - Intake: RT = in, LT = out (hold)
- *   - Launcher profile: A = close goal, B = far goal
- *   - Launch: Right bumper = fire (feeds for fixed time)
- *   - Stop launcher: X
- *   - Diverter: D-pad LEFT = left, RIGHT = right
- *
- * Notes:
- *  - If you don’t have a device wired, simply leave it unconfigured in the RC app
- *    and this OpMode will quietly skip it (it checks for nulls).
- */
-
 import static com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE;
 
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.CRServo;
@@ -54,7 +10,6 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
-import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
@@ -62,16 +17,17 @@ import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
 import java.util.List;
 
-@TeleOp(name = "Decode RoboAvengers TeleOp 2025", group = "RoboAvengers")
+@TeleOp(name = "Decode RoboAvengers TeleOp 2025 (Pinpoint)", group = "RoboAvengers")
 public class DecodeRoboAvengersTeleOp extends LinearOpMode {
 
-    // ----------------- Drive / IMU -----------------
+    // ----------------- Drive / Pinpoint -----------------
     private DcMotor leftFront, rightFront, leftBack, rightBack;
-    private IMU imu;
+    private GoBildaPinpointDriver pinpoint;
     private boolean fieldCentric = true;
     private double headingOffsetRad = 0.0;
 
@@ -92,7 +48,6 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
     private final ElapsedTime leftFeedTimer = new ElapsedTime();
     private final ElapsedTime rightFeedTimer = new ElapsedTime();
 
-    // Velocity targets (ticks/second). Tune for your motors.
     private static final double LAUNCH_CLOSE_TARGET = 1200;
     private static final double LAUNCH_CLOSE_MIN    = 1175;
     private static final double LAUNCH_FAR_TARGET   = 1350;
@@ -100,9 +55,8 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
     private double launcherTarget = LAUNCH_CLOSE_TARGET;
     private double launcherMin    = LAUNCH_CLOSE_MIN;
 
-    private static final double FEED_TIME_S = 0.80; // seconds for feeder pulse
+    private static final double FEED_TIME_S = 0.80;
 
-    // Diverter positions
     private static final double DIVERTER_LEFT  = 0.2962;
     private static final double DIVERTER_RIGHT = 0.0;
 
@@ -112,19 +66,17 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
 
     @Override
     public void runOpMode() throws InterruptedException {
-        // ---- Map drive motors (support both naming schemes) ----
+        // ---- Map drive motors ----
         leftFront  = firstMotor("front_left_drive", "frontLeftMotor");
         rightFront = firstMotor("front_right_drive", "frontRightMotor");
         leftBack   = firstMotor("back_left_drive",  "backLeftMotor");
         rightBack  = firstMotor("back_right_drive", "backRightMotor");
 
-        // Fallback if any are missing
         if (leftFront == null || rightFront == null || leftBack == null || rightBack == null) {
-            telemetry.addLine("ERROR: One or more drive motors not found. Check naming in the RC config.");
+            telemetry.addLine("ERROR: One or more drive motors not found.");
             telemetry.update();
         }
 
-        // Intake / launch / servos (optional)
         intake       = getMotor("intake");
         leftLauncher = getMotorEx("left_launcher");
         rightLauncher= getMotorEx("right_launcher");
@@ -133,28 +85,34 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
         diverter     = getServo("diverter");
         frontDistance= getDistance("frontDistance");
 
-        // ---- Motor directions (adjust to your build) ----
+        // ---- Motor directions ----
         if (leftFront != null)  leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
         if (leftBack  != null)  leftBack.setDirection(DcMotorSimple.Direction.REVERSE);
         if (rightFront!= null)  rightFront.setDirection(DcMotorSimple.Direction.FORWARD);
         if (rightBack != null)  rightBack.setDirection(DcMotorSimple.Direction.FORWARD);
-
         setBrake(leftFront, rightFront, leftBack, rightBack);
 
-        // ---- IMU setup for field-centric ----
+        // ---- Pinpoint setup ----
         try {
-            imu = hardwareMap.get(IMU.class, "imu");
-            IMU.Parameters params = new IMU.Parameters(new RevHubOrientationOnRobot(
-                    RevHubOrientationOnRobot.LogoFacingDirection.UP,
-                    RevHubOrientationOnRobot.UsbFacingDirection.FORWARD));
-            imu.initialize(params);
+            pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, "pinpoint");
+
+            // Configure your odometry pod type and encoder directions
+            pinpoint.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
+            pinpoint.setEncoderDirections(
+                    GoBildaPinpointDriver.EncoderDirection.FORWARD,
+                    GoBildaPinpointDriver.EncoderDirection.REVERSED
+            );
+
+            // Set offsets (mm) if needed to match your robot geometry
+            pinpoint.setOffsets(0, 0, DistanceUnit.MM);
+            pinpoint.resetPosAndIMU();
             zeroHeading();
-        } catch (Exception ignored) {
-            telemetry.addLine("IMU not found — field-centric will be disabled.");
+        } catch (Exception e) {
+            telemetry.addLine("Pinpoint not found — field-centric disabled.");
             fieldCentric = false;
         }
 
-        // ---- Vision: AprilTag (optional camera) ----
+        // ---- Vision setup ----
         try {
             aprilTag = new AprilTagProcessor.Builder().build();
             VisionPortal.Builder builder = new VisionPortal.Builder();
@@ -165,15 +123,15 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
             telemetry.addLine("No camera / AprilTag; continuing without vision.");
         }
 
-        telemetry.addLine("DecodeRi3D TeleOp READY. Press Play.");
+        telemetry.addLine("RoboAvengers TeleOp READY. Press Play.");
         telemetry.update();
         waitForStart();
 
         while (opModeIsActive()) {
             // --------------- DRIVE ---------------
-            double y = -gamepad1.left_stick_y;  // forward is -Y on sticks
-            double x =  gamepad1.left_stick_x;  // strafe
-            double rx = gamepad1.right_stick_x; // rotate
+            double y = -gamepad1.left_stick_y;
+            double x =  gamepad1.left_stick_x;
+            double rx = gamepad1.right_stick_x;
 
             if (gamepad1.x) fieldCentric = !fieldCentric;
             if (gamepad1.y) zeroHeading();
@@ -185,31 +143,20 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
             if (intake != null) {
                 double in = gamepad2.right_trigger;
                 double out = gamepad2.left_trigger;
+                double p = in - out;
 
-                double p = in - out; // RT=+1, LT=+1 => net
-
-                // Optional: auto-stop when something is close
                 if (frontDistance != null && in > 0.1) {
                     double cm = frontDistance.getDistance(org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit.CM);
-                    if (cm > 0 && cm < AUTO_STOP_INTAKE_CM) {
-                        p = 0.0;
-                    }
+                    if (cm > 0 && cm < AUTO_STOP_INTAKE_CM) p = 0.0;
                 }
                 intake.setPower(p);
             }
 
-            // --------------- LAUNCHER CONTROL ---------------
+            // --------------- LAUNCHER ---------------
             if (leftLauncher != null && rightLauncher != null) {
-                // Choose profile
                 if (gamepad2.a) { launcherTarget = LAUNCH_CLOSE_TARGET; launcherMin = LAUNCH_CLOSE_MIN; }
                 if (gamepad2.b) { launcherTarget = LAUNCH_FAR_TARGET;   launcherMin = LAUNCH_FAR_MIN;   }
-
-                // Stop launchers hard
-                if (gamepad2.x) {
-                    stopLaunchers();
-                }
-
-                // Request a shot (right bumper pulses feeders)
+                if (gamepad2.x) stopLaunchers();
                 boolean shot = gamepad2.right_bumper;
                 doLaunch(leftLauncher, leftFeeder, true,  shot);
                 doLaunch(rightLauncher,rightFeeder,false, shot);
@@ -229,31 +176,31 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
                     AprilTagDetection d = dets.get(0);
                     telemetry.addData("Tag ID", d.id);
                     telemetry.addData("Pose X,Y,Z (m)", "%.2f, %.2f, %.2f", d.ftcPose.x, d.ftcPose.y, d.ftcPose.z);
-                    telemetry.addData("Yaw/Pitch/Roll (deg)", "%.1f, %.1f, %.1f", d.ftcPose.yaw, d.ftcPose.pitch, d.ftcPose.roll);
                 }
             }
 
-            // --------------- GENERAL TELEMETRY ---------------
-            if (imu != null) {
+            // --------------- TELEMETRY ---------------
+            if (pinpoint != null) {
+                pinpoint.update();
                 double yaw = getYawRad();
                 telemetry.addData("Heading(deg)", Math.toDegrees(yaw));
                 telemetry.addData("FieldCentric", fieldCentric);
+                telemetry.addData("X(mm)", pinpoint.getPosX(DistanceUnit.MM));
+                telemetry.addData("Y(mm)", pinpoint.getPosY(DistanceUnit.MM));
             }
             telemetry.update();
         }
 
-        // clean shutdown
         stopLaunchers();
         setPower(0,0,0,0);
     }
 
     // ----------------- Helpers -----------------
     private void mecanumDrive(double y, double x, double rx, double scale) {
-        if (leftFront == null) return; // if drive not mapped, bail
-
+        if (leftFront == null) return;
         double rotX = x;
         double rotY = y;
-        if (fieldCentric && imu != null) {
+        if (fieldCentric && pinpoint != null) {
             double yaw = getYawRad();
             double cosA = Math.cos(-yaw);
             double sinA = Math.sin(-yaw);
@@ -281,22 +228,20 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
     }
 
     private void zeroHeading() {
-        if (imu != null) {
-            imu.resetYaw();
-            headingOffsetRad = 0.0; // reset our software offset
+        if (pinpoint != null) {
+            pinpoint.resetPosAndIMU();
+            headingOffsetRad = 0.0;
         }
     }
 
     private double getYawRad() {
-        if (imu == null) return 0.0;
-        // Use IMU yaw, convert to radians, apply offset
-        double yaw = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
-        return yaw - headingOffsetRad;
+        if (pinpoint == null) return 0.0;
+        // ✅ Specify AngleUnit.RADIANS explicitly
+        return pinpoint.getHeading(AngleUnit.RADIANS) - headingOffsetRad;
     }
 
     private void doLaunch(DcMotorEx launcher, CRServo feeder, boolean isLeft, boolean shotRequested) {
         if (launcher == null) return;
-
         LaunchState state = isLeft ? leftState : rightState;
         switch (state) {
             case IDLE:
@@ -333,7 +278,7 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
         rightState = LaunchState.IDLE;
     }
 
-    // -------- Safe hardware getters (null if absent) --------
+    // -------- Safe hardware getters --------
     private DcMotor firstMotor(String primary, String alt) {
         DcMotor m = getMotor(primary);
         if (m == null) m = getMotor(alt);
@@ -360,4 +305,3 @@ public class DecodeRoboAvengersTeleOp extends LinearOpMode {
         try { return hardwareMap.get(DistanceSensor.class, name); } catch (Exception e) { return null; }
     }
 }
-

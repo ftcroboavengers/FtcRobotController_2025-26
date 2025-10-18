@@ -7,9 +7,9 @@ import com.pedropathing.paths.PathConstraints;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.pedropathing.ftc.drivetrains.MecanumConstants;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
-import com.pedropathing.ftc.localization.constants.TwoWheelConstants;
-
+import com.pedropathing.ftc.localization.constants.PinpointConstants;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 
 public class Constants {
     public static FollowerConstants followerConstants = new FollowerConstants()
@@ -26,27 +26,21 @@ public class Constants {
             .rightFrontMotorDirection(DcMotorSimple.Direction.FORWARD)
             .rightRearMotorDirection(DcMotorSimple.Direction.FORWARD);
 
-    public static TwoWheelConstants localizerConstants = new TwoWheelConstants()
-            .forwardEncoder_HardwareMapName("front_left_drive")
-            .strafeEncoder_HardwareMapName("back_right_drive")
-            .IMU_HardwareMapName("imu")
-            .forwardPodY(8.0) // find your offsets - robotsetting https://pedropathing.com/docs/pathing/tuning/localization/two-wheel
-            .strafePodX(8.0) // find your offsets - robotsetting https://pedropathing.com/docs/pathing/tuning/localization/two-wheel
-            .forwardTicksToInches(0.000766990394)
-            .strafeTicksToInches(0.000766990394)
-            .IMU_Orientation(
-                    new RevHubOrientationOnRobot(
-                            RevHubOrientationOnRobot.LogoFacingDirection.UP,
-                            RevHubOrientationOnRobot.UsbFacingDirection.LEFT
-                    )
-            );
+    public static PinpointConstants localizerConstants = new PinpointConstants()
+            .forwardPodY(-5)
+            .strafePodX(0.5)
+            .distanceUnit(DistanceUnit.INCH)
+            .hardwareMapName("pinpoint")
+            .encoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD)
+            .forwardEncoderDirection(GoBildaPinpointDriver.EncoderDirection.FORWARD)
+            .strafeEncoderDirection(GoBildaPinpointDriver.EncoderDirection.FORWARD);
 
     public static PathConstraints pathConstraints = new PathConstraints(0.99, 100, 1, 1);
 
     public static Follower createFollower(HardwareMap hardwareMap) {
         return new FollowerBuilder(followerConstants, hardwareMap)
                 .pathConstraints(pathConstraints)
-                .twoWheelLocalizer(localizerConstants)
+                .pinpointLocalizer(localizerConstants)
                 .mecanumDrivetrain(driveConstants)
                 .build();
     }

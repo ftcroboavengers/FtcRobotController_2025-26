@@ -15,9 +15,12 @@ public class PedroLPathReturnHalfPower extends LinearOpMode {
 
     @Override
     public void runOpMode() throws InterruptedException {
+        // 1️⃣ Create Pedro follower from constants
         Follower follower = Constants.createFollower(hardwareMap);
 
-        // Optionally reduce power globally to 50%
+        // (no follower.enablePanels(); — not in your version)
+
+        // Optionally limit max power
         follower.setMaxPower(0.5);
 
         // --- Define poses ---
@@ -37,13 +40,15 @@ public class PedroLPathReturnHalfPower extends LinearOpMode {
         turnPath.setLinearHeadingInterpolation(0, Math.toRadians(-90));
         returnPath.setLinearHeadingInterpolation(Math.toRadians(-90), 0);
 
+        //  (Place telemetry setup here — before waitForStart)
         telemetry.addLine("Ready for Pedro L-path test (half power)");
         telemetry.update();
 
+        // 2️⃣ Wait for Start button
         waitForStart();
         if (isStopRequested()) return;
 
-        // --- Run each path in sequence ---
+        // 3️⃣ Run your path sequence
         followPath(follower, forwardPath);
         followPath(follower, turnPath);
         followPath(follower, forwardAgainPath);
@@ -53,15 +58,23 @@ public class PedroLPathReturnHalfPower extends LinearOpMode {
         telemetry.update();
     }
 
+    // 4️⃣ Your helper method — this is where you update telemetry continuously
     private void followPath(Follower follower, Path path) {
         follower.followPath(path);
         while (opModeIsActive() && follower.isBusy()) {
             follower.update();
+
+            // 🟣 PLACE THIS TELEMETRY SNIPPET HERE
             Pose pose = follower.getPose();
             telemetry.addData("X", "%.1f", pose.getX());
             telemetry.addData("Y", "%.1f", pose.getY());
             telemetry.addData("Heading (deg)", "%.1f", Math.toDegrees(pose.getHeading()));
             telemetry.update();
+
+            // 👇 Optional: send this to external dashboard (if you use one)
+            // FtcDashboard.getInstance().getTelemetry().addData("X", pose.getX());
+            // FtcDashboard.getInstance().getTelemetry().addData("Y", pose.getY());
+            // FtcDashboard.getInstance().getTelemetry().update();
         }
     }
 }
