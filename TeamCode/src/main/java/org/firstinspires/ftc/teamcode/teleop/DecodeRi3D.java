@@ -118,10 +118,10 @@ public class DecodeRi3D extends OpMode {
         leftLaunchState = LaunchState.IDLE;
         rightLaunchState = LaunchState.IDLE;
 
-        leftFrontDrive = hardwareMap.get(DcMotor.class, "left_front_drive");
-        rightFrontDrive = hardwareMap.get(DcMotor.class, "right_front_drive");
-        leftBackDrive = hardwareMap.get(DcMotor.class, "left_back_drive");
-        rightBackDrive = hardwareMap.get(DcMotor.class, "right_back_drive");
+        leftFrontDrive = hardwareMap.get(DcMotor.class, "front_left_drive");
+        rightFrontDrive = hardwareMap.get(DcMotor.class, "front_right_drive");
+        leftBackDrive = hardwareMap.get(DcMotor.class, "back_left_drive");
+        rightBackDrive = hardwareMap.get(DcMotor.class, "back_right_drive");
         leftLauncher = hardwareMap.get(DcMotorEx.class, "left_launcher");
         rightLauncher = hardwareMap.get(DcMotorEx.class, "right_launcher");
         intake = hardwareMap.get(DcMotor.class, "intake");
