@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.teleop;
 
 import static com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE;
 
+import com.bylazar.configurables.annotations.Configurable;
 import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -12,12 +13,17 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@TeleOp(name = "Decode RoboAvengers TeleOp 2025 (Core Simplified) 2", group = "RoboAvengers")
-public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
+import com.bylazar.telemetry.TelemetryManager;
+import com.bylazar.telemetry.PanelsTelemetry;
+import com.pedropathing.geometry.*;
+
+@TeleOp(name = "Decode RoboAvengers TeleOp 2025 Test Panels", group = "RoboAvengers")
+public class DecodeRoboAvengers2TeleOpTest extends LinearOpMode {
 
     // ----------------- Drive / Pinpoint -----------------
     private DcMotor leftFront, rightFront, leftBack, rightBack;
     private GoBildaPinpointDriver pinpoint;
+    private TelemetryManager panelsTelemetry;
     private boolean fieldCentric = true;
     private double headingOffsetRad = 0.0;
 
@@ -71,6 +77,11 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
             telemetry.addLine("Pinpoint not found — field-centric disabled.");
             fieldCentric = false;
         }
+
+        // ---- PanelsTelemetry setup ----
+        panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
+        panelsTelemetry.debug("Status", "TeleOp Initialized");
+        panelsTelemetry.update(telemetry);
 
         telemetry.addLine("RoboAvengers TeleOp READY. Press Play.");
         telemetry.update();
@@ -142,6 +153,23 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
                 telemetry.addData("Y(mm)", pinpoint.getPosY(DistanceUnit.MM));
             }
             telemetry.addData("Launcher Target", launcherTarget);
+
+            // ---- PanelsTelemetry live update ----
+            if (pinpoint != null) {
+                Pose pose = new Pose(
+                        pinpoint.getPosX(DistanceUnit.MM) / 25.4,
+                        pinpoint.getPosY(DistanceUnit.MM) / 25.4,
+                        getYawRad()
+                );
+                panelsTelemetry.debug("Pose X", pose.getX());
+                panelsTelemetry.debug("Pose Y", pose.getY());
+                panelsTelemetry.debug("Heading (deg)", Math.toDegrees(pose.getHeading()));
+            }
+
+            panelsTelemetry.debug("Launcher Target", launcherTarget);
+            panelsTelemetry.debug("FieldCentric", fieldCentric);
+            panelsTelemetry.update(telemetry);
+
             telemetry.update();
         }
 
