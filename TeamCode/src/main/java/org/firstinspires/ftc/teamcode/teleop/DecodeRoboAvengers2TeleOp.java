@@ -90,8 +90,14 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
 
             // --------------- INTAKE ---------------
             if (intake != null) {
-                double in = gamepad2.right_trigger;
-                double out = gamepad2.left_trigger;
+                double in = gamepad1.right_trigger;
+                double out = gamepad1.left_trigger;
+
+                // We will add this back in when we get the diverter
+                // double p = 0.3;
+                // if (in > 0.05 || out > 0.05) {
+                //    p = in - out;
+                //}
                 double p = in - out;
                 intake.setPower(p);
             }
