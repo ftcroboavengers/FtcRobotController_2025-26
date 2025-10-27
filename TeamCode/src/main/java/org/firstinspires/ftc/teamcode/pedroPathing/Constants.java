@@ -12,78 +12,70 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 
 /**
- * Pedro Pathing Constants configuration for your robot.
+ * Pedro + Panels constants for RoboAvengers (FTC 11 / Pedro 2.0.3 + Panels 1.0.7)
  *
- * - GoBilda Pinpoint is mounted at the back of the robot, 5 inches behind center.
- * - X (forward) odometry pod is near the back.
- * - Y (strafe) odometry pod is on the right side.
- * - Robot coordinate system:
- *      +X = forward
- *      +Y = right
- *      +Heading = counterclockwise
- * - Clockwise rotation decreases heading.
+ * Coordinate frame:
+ *   +X = forward
+ *   +Y = right
+ *   +Heading = CCW
  */
 public class Constants {
 
     /*--------------------------------------
-     *  PID / Motion physics configuration
+     *  Motion model / follower tuning
      *--------------------------------------*/
     public static FollowerConstants followerConstants = new FollowerConstants()
-            .mass(5); // Approximate mass in kg
+            .mass(5.5);    // kg — adjust to your robot’s real weight
 
     /*--------------------------------------
      *  Drivetrain (Mecanum) configuration
      *--------------------------------------*/
     public static MecanumConstants driveConstants = new MecanumConstants()
             .maxPower(1.0)
-
             .rightFrontMotorName("front_right_drive")
             .rightRearMotorName("back_right_drive")
             .leftRearMotorName("back_left_drive")
             .leftFrontMotorName("front_left_drive")
-            // ✅ Flip side directions so +Y = right
+
+            // Flip directions so +Y = right
             .leftFrontMotorDirection(DcMotorSimple.Direction.FORWARD)
             .leftRearMotorDirection(DcMotorSimple.Direction.FORWARD)
             .rightFrontMotorDirection(DcMotorSimple.Direction.REVERSE)
             .rightRearMotorDirection(DcMotorSimple.Direction.REVERSE);
 
     /*--------------------------------------
-     *  Localization (GoBilda Pinpoint) configuration
+     *  Localization (GoBilda Pinpoint)
      *--------------------------------------*/
     public static PinpointConstants localizerConstants = new PinpointConstants()
-            // Pinpoint board is ~5 inches behind center
-            .forwardPodY(-5.0)
+            // Pod placement relative to robot center
+            .forwardPodY(-5.0)  // X-pod: 5 in behind center
+            .strafePodX(2.0)    // Y-pod: 2 in right of center
 
-            // Strafe (Y) pod is ~2 inches to the right of center
-            .strafePodX(2.0)
-
-            // Distance units for offsets and position reporting
+            // Units for Panels / telemetry
             .distanceUnit(DistanceUnit.INCH)
 
-            // Hardware name from configuration
+            // Device name in Control-Hub config
             .hardwareMapName("pinpoint")
 
-            // GoBilda 4-bar odometry pod setup
+            // Encoder + wheel type
             .encoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD)
 
-            // Encoder direction configuration:
-            //   FORWARD means pod increases counts in the same direction
-            //   as positive X (for forwardPod) or positive Y (for strafePod)
+            // Directions (verified for 4-bar right-side pod)
             .forwardEncoderDirection(GoBildaPinpointDriver.EncoderDirection.FORWARD)
             .strafeEncoderDirection(GoBildaPinpointDriver.EncoderDirection.REVERSED);
 
     /*--------------------------------------
-     *  Motion constraints
+     *  Default motion constraints
      *--------------------------------------*/
     public static PathConstraints pathConstraints = new PathConstraints(
-            0.99,   // max power scaling
-            100,    // max translational speed (in/sec)
-            1,      // max acceleration
-            1       // max angular acceleration
+            0.99,   // global power scale
+            60,     // max translational speed (in/s)
+            1.5,    // max linear acceleration (in/s²)
+            1.0     // max angular acceleration (rad/s²)
     );
 
     /*--------------------------------------
-     *  Follower factory method
+     *  Factory method for the Pedro Follower
      *--------------------------------------*/
     public static Follower createFollower(HardwareMap hardwareMap) {
         return new FollowerBuilder(followerConstants, hardwareMap)
