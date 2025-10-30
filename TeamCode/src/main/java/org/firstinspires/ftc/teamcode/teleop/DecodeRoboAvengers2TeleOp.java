@@ -99,8 +99,15 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
 
             // --------------- INTAKE ---------------
             if (intake != null) {
-                double in = gamepad1.right_trigger;
-                double out = gamepad1.left_trigger;
+                double in1 = gamepad1.right_trigger;
+                double out1 = gamepad1.left_trigger;
+                double in2 = gamepad2.right_trigger;
+                double out2 = gamepad2.left_trigger;
+
+                // Combine input from both gamepads
+                // whichever is pressed more
+                double in = Math.max(in1, in2);
+                double out = Math.max(out1, out2);
 
                 double p = 0;
                 double scale = 0.5;
