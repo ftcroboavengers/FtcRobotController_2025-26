@@ -11,13 +11,6 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-/**
- * Autonomous using GoBilda Pinpoint Odometry:
- *  - FORWARD: drive until X ≈ +48 in
- *  - TURN: rotate until heading ≈ 180°
- *  - FIRE: run launchers + intake for 5 s
- *  - STOP: shutdown
- */
 @Autonomous(name = "Forward + Fire (Pinpoint)", group = "RoboAvengers")
 public class ForwardTurnFirePinpoint extends LinearOpMode {
 
