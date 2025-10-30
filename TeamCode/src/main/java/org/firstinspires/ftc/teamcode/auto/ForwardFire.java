@@ -11,8 +11,8 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@Autonomous(name = "Forward + Fire (Pinpoint)", group = "RoboAvengers")
-public class ForwardTurnFirePinpoint extends LinearOpMode {
+@Autonomous(name = "back + Fire (Pinpoint)", group = "RoboAvengers")
+public class ForwardFire extends LinearOpMode {
 
     // Drive motors
     private DcMotor leftFront, rightFront, leftBack, rightBack;
@@ -96,8 +96,8 @@ public class ForwardTurnFirePinpoint extends LinearOpMode {
 
             switch (state) {
                 case FORWARD:
-                    telemetry.addLine("State: FORWARD 48 in");
-                    if (moveToX(-48.0)) {
+                    telemetry.addLine("State: Forward 48 in");
+                    if (moveToX(48.0)) {
                         stopDrive();
                         state = AutoState.FIRE;
                     }
