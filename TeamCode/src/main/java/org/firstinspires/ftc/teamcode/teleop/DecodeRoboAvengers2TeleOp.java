@@ -12,7 +12,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@TeleOp(name = "Decode RoboAvengers TeleOp 2025 (Core Simplified) 2", group = "RoboAvengers")
+@TeleOp(name = "Decode RoboAvengers TeleOp 2025", group = "RoboAvengers")
 public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
 
     // ----------------- Drive / Pinpoint -----------------
@@ -30,7 +30,7 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
     private boolean leftLauncherOn = false;
 
     // ----------------- Launcher Targets -----------------
-    private static final double LAUNCH_CLOSE_TARGET = 1200;
+    private static final double LAUNCH_CLOSE_TARGET = 1350;
     private static final double LAUNCH_FAR_TARGET = 1350;
     private double launcherTarget = LAUNCH_CLOSE_TARGET;
 
@@ -45,6 +45,15 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
         intake = getMotor("intake");
         leftLauncher = getMotorEx("left_launcher");
         rightLauncher = getMotorEx("right_launcher");
+
+        if (leftLauncher != null) {
+            leftLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        }
+        if (rightLauncher != null) {
+            rightLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        }
 
         // ---- Intake directions ----
         if (intake != null) intake.setDirection(DcMotorSimple.Direction.REVERSE);
@@ -93,12 +102,12 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
                 double in = gamepad1.right_trigger;
                 double out = gamepad1.left_trigger;
 
-                // We will add this back in when we get the diverter
-                // double p = 0.3;
-                // if (in > 0.05 || out > 0.05) {
-                //    p = in - out;
-                //}
-                double p = in - out;
+                double p = 0;
+                double scale = 0.5;
+                 if (in > 0.01 || out > 0.01) {
+                    p = (in - out) * scale;
+                }
+
                 intake.setPower(p);
             }
 
@@ -136,7 +145,6 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
                     leftLauncherOn = false;
                 }
             }
-
 
             // --------------- TELEMETRY ---------------
             if (pinpoint != null) {

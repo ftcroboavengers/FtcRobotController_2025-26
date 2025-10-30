@@ -18,7 +18,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
  *  - FIRE: run launchers + intake for 5 s
  *  - STOP: shutdown
  */
-@Autonomous(name = "Forward + Turn 180 + Fire (Pinpoint)", group = "RoboAvengers")
+@Autonomous(name = "Forward + Fire (Pinpoint)", group = "RoboAvengers")
 public class ForwardTurnFirePinpoint extends LinearOpMode {
 
     // Drive motors
@@ -33,14 +33,17 @@ public class ForwardTurnFirePinpoint extends LinearOpMode {
 
     // Simple proportional gains (tune these)
     private static final double kDrive = 0.02;   // position → power
-    private static final double kTurn  = 0.015;  // heading error → power
+    private static final double kTurn  = 0.008;  // heading error → power
 
     // Launcher
     private static final double LAUNCH_TARGET = 1200;
 
     // State machine
-    private enum AutoState { FORWARD, TURN, FIRE, STOP, DONE }
+    private enum AutoState { FORWARD, TURN, FIRE, STOP, DONE, SET }
     private AutoState state = AutoState.FORWARD;
+
+    // Stability counter for turning
+    private int stableCount = 0;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -61,18 +64,29 @@ public class ForwardTurnFirePinpoint extends LinearOpMode {
         if (intake != null) intake.setDirection(DcMotorSimple.Direction.REVERSE);
         setBrake(leftFront, rightFront, leftBack, rightBack);
 
+        // --- Launcher setup ---
+        if (leftLauncher != null) {
+            leftLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        }
+
+        if (rightLauncher != null) {
+            rightLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        }
+
         // --- Pinpoint setup ---
         try {
             pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, "pinpoint");
             pinpoint.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
             pinpoint.setEncoderDirections(
                     GoBildaPinpointDriver.EncoderDirection.FORWARD,
-                    GoBildaPinpointDriver.EncoderDirection.REVERSED
+                    GoBildaPinpointDriver.EncoderDirection.FORWARD
             );
             pinpoint.setOffsets(0, 0, DistanceUnit.MM);
             pinpoint.resetPosAndIMU();
         } catch (Exception e) {
-            telemetry.addLine("⚠️ Pinpoint not found!");
+            telemetry.addLine("Pinpoint not found!");
             telemetry.update();
             sleep(2000);
             pinpoint = null;
@@ -90,15 +104,7 @@ public class ForwardTurnFirePinpoint extends LinearOpMode {
             switch (state) {
                 case FORWARD:
                     telemetry.addLine("State: FORWARD 48 in");
-                    if (moveToX(48.0)) {
-                        stopDrive();
-                        state = AutoState.TURN;
-                    }
-                    break;
-
-                case TURN:
-                    telemetry.addLine("State: TURN 180°");
-                    if (turnToHeading(180.0)) {
+                    if (moveToX(-48.0)) {
                         stopDrive();
                         state = AutoState.FIRE;
                     }
@@ -132,6 +138,12 @@ public class ForwardTurnFirePinpoint extends LinearOpMode {
                 telemetry.addData("Y (in)", "%.1f", pinpoint.getPosY(DistanceUnit.INCH));
                 telemetry.addData("Heading (deg)", "%.1f", pinpoint.getHeading(AngleUnit.DEGREES));
             }
+
+            if (leftLauncher != null && rightLauncher != null) {
+                telemetry.addData("Left launcher vel", "%.0f", leftLauncher.getVelocity());
+                telemetry.addData("Right launcher vel", "%.0f", rightLauncher.getVelocity());
+            }
+
             telemetry.update();
             idle();
         }
@@ -160,13 +172,25 @@ public class ForwardTurnFirePinpoint extends LinearOpMode {
     private boolean turnToHeading(double targetDeg) {
         double current = normalize180(pinpoint.getHeading(AngleUnit.DEGREES));
         double error = normalize180(targetDeg - current);
+
         double power = kTurn * error;
 
-        power = Math.max(-MAX_TURN_POWER, Math.min(MAX_TURN_POWER, power));
-        // positive error → turn right
-        setPower(power, -power, power, -power);
+        // Minimum power to overcome friction
+        if (Math.abs(power) < 0.15 && Math.abs(error) > 3) {
+            power = Math.copySign(0.15, power);
+        }
 
-        return Math.abs(error) < 3.0;  // stop within 3 degrees
+        // Clip
+        power = Math.max(-MAX_TURN_POWER, Math.min(MAX_TURN_POWER, power));
+
+        // Flip for reversed left motors
+        setPower(-power, power, -power, power);
+
+        boolean onTarget = Math.abs(error) < 3.0;
+        if (onTarget) stableCount++;
+        else stableCount = 0;
+
+        return stableCount > 5;  // must be stable for a few cycles
     }
 
     private double normalize180(double angle) {
@@ -211,10 +235,12 @@ public class ForwardTurnFirePinpoint extends LinearOpMode {
     }
 
     private DcMotor getMotor(String name) {
-        try { return hardwareMap.get(DcMotor.class, name); } catch (Exception e) { return null; }
+        try { return hardwareMap.get(DcMotor.class, name); }
+        catch (Exception e) { return null; }
     }
 
     private DcMotorEx getMotorEx(String name) {
-        try { return hardwareMap.get(DcMotorEx.class, name); } catch (Exception e) { return null; }
+        try { return hardwareMap.get(DcMotorEx.class, name); }
+        catch (Exception e) { return null; }
     }
 }
