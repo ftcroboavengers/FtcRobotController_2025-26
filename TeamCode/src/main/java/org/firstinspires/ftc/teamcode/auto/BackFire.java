@@ -32,8 +32,8 @@ public class BackFire extends LinearOpMode {
     private static final double LAUNCH_TARGET = 1200;
 
     // State machine
-    private enum AutoState { FORWARD, TURN, FIRE, STOP, DONE, SET }
-    private AutoState state = AutoState.FORWARD;
+    private enum AutoState { BACK, FIRE, STOP, DONE }
+    private AutoState state = AutoState.BACK;
 
     // Stability counter for turning
     private int stableCount = 0;
@@ -95,7 +95,7 @@ public class BackFire extends LinearOpMode {
             if (pinpoint != null) pinpoint.update();
 
             switch (state) {
-                case FORWARD:
+                case BACK:
                     telemetry.addLine("State: Back 48 in");
                     if (moveToX(-48.0)) {
                         stopDrive();

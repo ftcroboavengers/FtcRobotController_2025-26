@@ -32,7 +32,7 @@ public class ForwardFire extends LinearOpMode {
     private static final double LAUNCH_TARGET = 1200;
 
     // State machine
-    private enum AutoState { FORWARD, TURN, FIRE, STOP, DONE, SET }
+    private enum AutoState { FORWARD, FIRE, STOP, DONE }
     private AutoState state = AutoState.FORWARD;
 
     // Stability counter for turning
