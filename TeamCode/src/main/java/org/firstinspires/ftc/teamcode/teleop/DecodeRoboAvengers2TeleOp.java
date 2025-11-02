@@ -47,12 +47,19 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
         rightLauncher = getMotorEx("right_launcher");
 
         if (leftLauncher != null) {
-            leftLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            leftLauncher.setZeroPowerBehavior(BRAKE);
             leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            // PIDF tuning
+            // If shots oscillate or overshoot, lower the P or D values.
+            // If shots underpower, raise the F (feedforward) slightly — e.g. from 12.0 → 13.0.
+            leftLauncher.setVelocityPIDFCoefficients(30.0, 0.0, 10.0, 12.0);
         }
+
         if (rightLauncher != null) {
-            rightLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            rightLauncher.setZeroPowerBehavior(BRAKE);
             rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            // PIDF tuning
+            rightLauncher.setVelocityPIDFCoefficients(30.0, 0.0, 10.0, 12.0);
         }
 
         // ---- Intake directions ----
@@ -110,7 +117,7 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
                 double out = Math.max(out1, out2);
 
                 double p = 0;
-                double scale = 0.5;
+                double scale = 1;
                  if (in > 0.01 || out > 0.01) {
                     p = (in - out) * scale;
                 }
@@ -163,6 +170,9 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
                 telemetry.addData("Y(mm)", pinpoint.getPosY(DistanceUnit.MM));
             }
             telemetry.addData("Launcher Target", launcherTarget);
+            telemetry.addData("Left Vel", leftLauncher.getVelocity());
+            telemetry.addData("Right Vel", rightLauncher.getVelocity());
+            telemetry.addData("Target Vel", launcherTarget);
             telemetry.update();
         }
 
@@ -215,11 +225,13 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
     }
 
     private void startRightLauncher() {
-        rightLauncher.setVelocity(launcherTarget);
+        double adjustedVelocity = getVoltageCompensatedVelocity(launcherTarget);
+        rightLauncher.setVelocity(adjustedVelocity);
     }
 
     private void startLeftLauncher() {
-        leftLauncher.setVelocity(launcherTarget);
+        double adjustedVelocity = getVoltageCompensatedVelocity(launcherTarget);
+        leftLauncher.setVelocity(adjustedVelocity);
     }
 
     private void stopLaunchers() {
@@ -233,6 +245,17 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
 
     private void stopRightLauncher() {
         rightLauncher.setPower(0);
+    }
+
+    private double getVoltageCompensatedVelocity(double targetTicksPerSec) {
+        double nominalVoltage = 13.0; // fully charged battery
+        double currentVoltage = 12.0;
+        try {
+            currentVoltage = hardwareMap.voltageSensor.iterator().next().getVoltage();
+        } catch (Exception e) {
+            telemetry.addLine("⚠️ Voltage sensor not found — using 12V default");
+        }
+        return targetTicksPerSec * (nominalVoltage / currentVoltage);
     }
 
     // -------- Safe hardware getters --------

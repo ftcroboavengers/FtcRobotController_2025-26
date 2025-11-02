@@ -106,7 +106,7 @@ public class BackFire extends LinearOpMode {
                 case FIRE:
                     telemetry.addLine("State: FIRE (5s)");
                     startLaunchers();
-                    sleep(300);
+                    sleep(3000);
                     if (intake != null) intake.setPower(1.0);
                     sleep(5000);
                     if (intake != null) intake.setPower(0);
