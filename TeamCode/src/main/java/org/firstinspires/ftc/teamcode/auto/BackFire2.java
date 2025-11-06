@@ -10,35 +10,32 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@Autonomous(name = "Back + Fire (Dual PIDF Tune)", group = "RoboAvengers")
+@Autonomous(name = "Back + Fire (Left Power / Right PIDF)", group = "RoboAvengers")
 public class BackFire2 extends LinearOpMode {
 
-    // Drive motors
+    // ------------- Hardware -------------
     private DcMotor leftFront, rightFront, leftBack, rightBack;
     private DcMotor intake;
     private DcMotorEx leftLauncher, rightLauncher;
     private GoBildaPinpointDriver pinpoint;
 
-    // Motion control
+    // ------------- Drive tuning -------------
     private static final double MAX_DRIVE_POWER = 0.5;
     private static final double kDrive = 0.02;
 
-    // Launcher target velocity (ticks/sec)
-    private static final double TARGET_VELOCITY = 8000; // ≈4400 RPM
-    private static final int VEL_TOL = 150;
-    private static final int READY_CYCLES = 5;
+    // ------------- Launcher tuning -------------
+    private static final double TARGET_VELOCITY = 2400; // ≈4400 RPM
+    private static final int VEL_TOL = 200;
+    private static final int READY_CYCLES = 4;
 
-    // Left launcher PIDF
-    private static final double L_P = 25.0;
-    private static final double L_I = 0.0;
-    private static final double L_D = 5.0;
-    private static final double L_F = 12.0;
+    // Left launcher uses open-loop power
+    private static double LEFT_POWER_SCALE = 0.6; // default mid power
 
-    // Right launcher PIDF
+    // PIDF for right launcher
     private static final double R_P = 28.0;
     private static final double R_I = 0.0;
     private static final double R_D = 6.0;
-    private static final double R_F = 12.5;
+    private static final double R_F = 12.0;
 
     private int readyCount = 0;
 
@@ -47,7 +44,8 @@ public class BackFire2 extends LinearOpMode {
 
     @Override
     public void runOpMode() throws InterruptedException {
-        // Map hardware
+
+        // --- Map hardware ---
         leftFront  = firstMotor("front_left_drive",  "frontLeftMotor");
         rightFront = firstMotor("front_right_drive", "frontRightMotor");
         leftBack   = firstMotor("back_left_drive",   "backLeftMotor");
@@ -56,7 +54,7 @@ public class BackFire2 extends LinearOpMode {
         leftLauncher  = getMotorEx("left_launcher");
         rightLauncher = getMotorEx("right_launcher");
 
-        // Drive directions
+        // --- Drive directions ---
         if (leftFront  != null) leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
         if (leftBack   != null) leftBack.setDirection(DcMotorSimple.Direction.REVERSE);
         if (rightFront != null) rightFront.setDirection(DcMotorSimple.Direction.FORWARD);
@@ -64,19 +62,20 @@ public class BackFire2 extends LinearOpMode {
         if (intake != null) intake.setDirection(DcMotorSimple.Direction.REVERSE);
         setBrake(leftFront, rightFront, leftBack, rightBack);
 
-        // Launcher setup
+        // --- Launcher setup ---
         if (leftLauncher != null) {
-            leftLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-            leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            leftLauncher.setVelocityPIDFCoefficients(L_P, L_I, L_D, L_F);
+            leftLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
+            leftLauncher.setZeroPowerBehavior(BRAKE);
+            leftLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER); // power mode
         }
         if (rightLauncher != null) {
+            rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
             rightLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
             rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
             rightLauncher.setVelocityPIDFCoefficients(R_P, R_I, R_D, R_F);
         }
 
-        // Pinpoint setup
+        // --- Pinpoint setup (optional) ---
         try {
             pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, "pinpoint");
             pinpoint.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
@@ -87,16 +86,19 @@ public class BackFire2 extends LinearOpMode {
             pinpoint.setOffsets(0, 0, DistanceUnit.MM);
             pinpoint.resetPosAndIMU();
         } catch (Exception e) {
-            telemetry.addLine("Pinpoint not found");
+            telemetry.addLine("Pinpoint not found — continuing without odometry.");
             pinpoint = null;
         }
 
-        telemetry.addLine("READY: Back + Fire (Dual PIDF Tune)");
-        telemetry.addLine(String.format("Left PIDF:  P=%.1f I=%.1f D=%.1f F=%.1f", L_P, L_I, L_D, L_F));
+        telemetry.addLine("READY: Back + Fire (Left Power / Right PIDF)");
         telemetry.addLine(String.format("Right PIDF: P=%.1f I=%.1f D=%.1f F=%.1f", R_P, R_I, R_D, R_F));
         telemetry.update();
 
         waitForStart();
+
+        // --- Reapply PIDF (Expansion Hub quirk) ---
+        if (rightLauncher != null)
+            rightLauncher.setVelocityPIDFCoefficients(R_P, R_I, R_D, R_F);
 
         while (opModeIsActive() && state != AutoState.DONE) {
             if (pinpoint != null) pinpoint.update();
@@ -112,16 +114,18 @@ public class BackFire2 extends LinearOpMode {
                     break;
 
                 case FIRE:
-                    telemetry.addLine("State: FIRE (Dual PIDF)");
+                    telemetry.addLine("State: FIRE");
                     startLaunchers();
-                    waitUntilStable();
 
-                    if (intake != null) intake.setPower(1.0);
-                    sleep(4000);
-                    if (intake != null) intake.setPower(0);
-
-                    stopLaunchers();
-                    state = AutoState.STOP;
+                    if (waitUntilStable(3000)) {
+                        if (intake != null) {
+                            intake.setPower(0.5);
+                            sleep(4000); // feed balls
+                            intake.setPower(0);
+                        }
+                        stopLaunchers();
+                        state = AutoState.STOP;
+                    }
                     break;
 
                 case STOP:
@@ -130,15 +134,12 @@ public class BackFire2 extends LinearOpMode {
                     break;
             }
 
-            telemetry.addData("Target (tps)", TARGET_VELOCITY);
-            if (leftLauncher != null) {
-                double leftErr = ((leftLauncher.getVelocity() - TARGET_VELOCITY) / TARGET_VELOCITY) * 100.0;
-                telemetry.addData("Left Vel", "%.0f (err %.1f%%)", leftLauncher.getVelocity(), leftErr);
-            }
-            if (rightLauncher != null) {
-                double rightErr = ((rightLauncher.getVelocity() - TARGET_VELOCITY) / TARGET_VELOCITY) * 100.0;
-                telemetry.addData("Right Vel", "%.0f (err %.1f%%)", rightLauncher.getVelocity(), rightErr);
-            }
+            double leftVel = getLeftVelocity();
+            double rightVel = rightLauncher != null ? rightLauncher.getVelocity() : 0;
+
+            telemetry.addData("Left Power", LEFT_POWER_SCALE);
+            telemetry.addData("Right Vel (tps)", rightVel);
+            telemetry.addData("Δ (Left-Right)", leftVel - rightVel);
             telemetry.addData("Stable", isLaunchersStable());
             telemetry.update();
             idle();
@@ -150,7 +151,7 @@ public class BackFire2 extends LinearOpMode {
         telemetry.update();
     }
 
-    // Movement
+    // --- Movement ---
     private boolean moveToX(double targetXInches) {
         if (pinpoint == null) return true;
         double currentX = pinpoint.getPosX(DistanceUnit.INCH);
@@ -161,33 +162,35 @@ public class BackFire2 extends LinearOpMode {
         return Math.abs(error) < 1.0;
     }
 
-    // Launcher
+    // --- Launcher helpers ---
     private void startLaunchers() {
         double adjusted = getVoltageCompensatedVelocity(TARGET_VELOCITY);
-        if (leftLauncher != null) leftLauncher.setVelocity(adjusted);
+        if (leftLauncher != null) leftLauncher.setPower(LEFT_POWER_SCALE);
         if (rightLauncher != null) rightLauncher.setVelocity(adjusted);
     }
 
-    private void waitUntilStable() {
+    private boolean waitUntilStable(long timeoutMs) {
         readyCount = 0;
         long start = System.currentTimeMillis();
-        while (opModeIsActive() && System.currentTimeMillis() - start < 3000) {
-            telemetry.addData("Left Vel", leftLauncher != null ? leftLauncher.getVelocity() : 0);
-            telemetry.addData("Right Vel", rightLauncher != null ? rightLauncher.getVelocity() : 0);
-            telemetry.addData("Stable", isLaunchersStable());
-            telemetry.update();
+        while (opModeIsActive() && System.currentTimeMillis() - start < timeoutMs) {
+            if (isLaunchersStable()) return true;
             sleep(100);
         }
+        return false;
     }
 
     private boolean isLaunchersStable() {
-        if (leftLauncher == null || rightLauncher == null) return false;
-        double lt = leftLauncher.getVelocity();
+        if (rightLauncher == null) return false;
         double rt = rightLauncher.getVelocity();
-        boolean inTol = Math.abs(lt - TARGET_VELOCITY) <= VEL_TOL &&
-                Math.abs(rt - TARGET_VELOCITY) <= VEL_TOL;
+        boolean inTol = Math.abs(rt - TARGET_VELOCITY) <= VEL_TOL;
         readyCount = inTol ? Math.min(READY_CYCLES, readyCount + 1) : 0;
         return readyCount >= READY_CYCLES;
+    }
+
+    private double getLeftVelocity() {
+        if (leftLauncher == null) return 0;
+        // estimate pseudo velocity (no encoder) based on power scale
+        return LEFT_POWER_SCALE * TARGET_VELOCITY;
     }
 
     private void stopLaunchers() {
@@ -200,13 +203,11 @@ public class BackFire2 extends LinearOpMode {
         double currentVoltage = 12.0;
         try {
             currentVoltage = hardwareMap.voltageSensor.iterator().next().getVoltage();
-        } catch (Exception e) {
-            // ignore
-        }
+        } catch (Exception ignored) {}
         return targetTicksPerSec * (nominalVoltage / currentVoltage);
     }
 
-    // Utility
+    // --- Utility ---
     private void setPower(double fl, double fr, double bl, double br) {
         if (leftFront != null) leftFront.setPower(fl);
         if (rightFront != null) rightFront.setPower(fr);
@@ -214,9 +215,7 @@ public class BackFire2 extends LinearOpMode {
         if (rightBack != null) rightBack.setPower(br);
     }
 
-    private void stopDrive() {
-        setPower(0, 0, 0, 0);
-    }
+    private void stopDrive() { setPower(0, 0, 0, 0); }
 
     private void setBrake(DcMotor... motors) {
         for (DcMotor m : motors) {
@@ -231,18 +230,12 @@ public class BackFire2 extends LinearOpMode {
     }
 
     private DcMotor getMotor(String name) {
-        try {
-            return hardwareMap.get(DcMotor.class, name);
-        } catch (Exception e) {
-            return null;
-        }
+        try { return hardwareMap.get(DcMotor.class, name); }
+        catch (Exception e) { return null; }
     }
 
     private DcMotorEx getMotorEx(String name) {
-        try {
-            return hardwareMap.get(DcMotorEx.class, name);
-        } catch (Exception e) {
-            return null;
-        }
+        try { return hardwareMap.get(DcMotorEx.class, name); }
+        catch (Exception e) { return null; }
     }
 }
