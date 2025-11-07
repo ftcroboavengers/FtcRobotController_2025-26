@@ -214,7 +214,7 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
         leftReadyCount = 0;
         rightReadyCount = 0;
 
-        telemetry.addLine("⚠️ CLEAR ALL triggered — all systems reset.");
+        telemetry.addLine("CLEAR ALL triggered — all systems reset.");
         telemetry.update();
     }
 
