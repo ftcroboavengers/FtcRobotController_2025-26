@@ -148,6 +148,11 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
                 intake.setPower(p);
             }
 
+            // --------------- CLEAR / EMERGENCY STOP ---------------
+            if (gamepad2.y) {
+                clearAll();
+            }
+
             // --------------- TARGET SWITCHES ---------------
            // if (gamepad2.a) {
            //     launcherTargetTPS = rpmToTicksPerSec(LAUNCH_CLOSE_RPM);
@@ -191,6 +196,28 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
     }
 
     // ----------------- Helpers -----------------
+
+    private void clearAll() {
+        // Stop all motors immediately
+        stopLaunchers();
+        if (intake != null) intake.setPower(0);
+
+        // Reset timers
+        leftTimer.reset();
+        rightTimer.reset();
+
+        // Reset state machines
+        leftState = LaunchState.IDLE;
+        rightState = LaunchState.IDLE;
+
+        // Reset ready counts
+        leftReadyCount = 0;
+        rightReadyCount = 0;
+
+        telemetry.addLine("⚠️ CLEAR ALL triggered — all systems reset.");
+        telemetry.update();
+    }
+
     private double getLeftVelocity() {
         if (leftLauncher == null) return 0;
         return -leftLauncher.getVelocity();
