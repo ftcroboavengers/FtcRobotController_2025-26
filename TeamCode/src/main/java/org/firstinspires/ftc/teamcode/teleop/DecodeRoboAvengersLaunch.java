@@ -28,9 +28,9 @@ public class DecodeRoboAvengersLaunch extends LinearOpMode {
     // ----------------- Launcher RPM targets -----------------
     private static final double TPR = 28.0;
     private static double rpmToTicksPerSec(double rpm) { return rpm * TPR / 60.0; }
-    private static final double LAUNCH_CLOSE_RPM = 2400;
-    private static final double LAUNCH_FAR_RPM   = 3000;
-    private static double LEFT_POWER_SCALE = 0.6;
+    private static final double LAUNCH_CLOSE_RPM = 4000;
+    private static final double LAUNCH_FAR_RPM   = 6000;
+    private static double LEFT_POWER_SCALE = 0.8;
     private double launcherTargetTPS = rpmToTicksPerSec(LAUNCH_CLOSE_RPM);
 
     // ----------------- Velocity / tolerance -----------------
@@ -151,11 +151,11 @@ public class DecodeRoboAvengersLaunch extends LinearOpMode {
             // --------------- TARGET SWITCHES ---------------
             if (gamepad2.a) {
                 launcherTargetTPS = rpmToTicksPerSec(LAUNCH_CLOSE_RPM);
-                LEFT_POWER_SCALE = 0.6;
+                LEFT_POWER_SCALE = 0.8;
             }
             if (gamepad2.b) {
                 launcherTargetTPS = rpmToTicksPerSec(LAUNCH_FAR_RPM);
-                LEFT_POWER_SCALE = 0.8;
+                LEFT_POWER_SCALE = 1.0;
             }
 
             // --------------- PER-SIDE SHOOT CONTROLS ---------------

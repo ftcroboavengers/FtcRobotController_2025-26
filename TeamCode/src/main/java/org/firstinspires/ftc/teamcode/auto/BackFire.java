@@ -28,8 +28,8 @@ public class BackFire extends LinearOpMode {
 
     // ---------------- Launcher Power Settings ----------------
     // Tune these manually
-    private static double LEFT_LAUNCH_POWER  = 0.6;
-    private static double RIGHT_LAUNCH_POWER = 0.6;
+    private static double LEFT_LAUNCH_POWER  = 0.8;
+    private static double RIGHT_LAUNCH_POWER = 0.8;
 
     // ---------------- State Machine ----------------
     private enum AutoState { BACK, FIRE, STOP, MORE, TURN_RIGHT, DONE }
@@ -128,8 +128,8 @@ public class BackFire extends LinearOpMode {
                     break;
 
                 case MORE:
-                    telemetry.addLine("State: BACK 20 in");
-                    if (moveToX(-68.0)) {
+                    telemetry.addLine("State: BACK 40 in");
+                    if (moveToX(-88.0)) {
                         stopDrive();
                         sleep(500);
                         state = AutoState.DONE;
