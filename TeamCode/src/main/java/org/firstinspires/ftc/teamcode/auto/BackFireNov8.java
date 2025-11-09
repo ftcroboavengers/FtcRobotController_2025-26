@@ -28,8 +28,8 @@ public class BackFireNov8 extends LinearOpMode {
 
     // ---------------- Launcher Power Settings ----------------
     // Tune these manually
-    private static double LEFT_LAUNCH_POWER  = 0.8;
-    private static double RIGHT_LAUNCH_POWER = 0.8;
+    private static double LEFT_LAUNCH_POWER  = 0.65;
+    private static double RIGHT_LAUNCH_POWER = 0.65;
 
     // ---------------- State Machine ----------------
     private enum AutoState { BACK, FIRE, STOP, MORE, TURN_RIGHT, DONE }

@@ -138,7 +138,7 @@ public class BackFireBlueNov8 extends LinearOpMode {
 
                 case TURN_LEFT:
                     telemetry.addLine("State: TURN Left 90°");
-                    if (turnToHeading(90.0)) {  // counter clockwise
+                    if (turnToHeading(45.0)) {  // counter clockwise
                         stopDrive();
                         sleep(500);
                         state = AutoState.MORE;

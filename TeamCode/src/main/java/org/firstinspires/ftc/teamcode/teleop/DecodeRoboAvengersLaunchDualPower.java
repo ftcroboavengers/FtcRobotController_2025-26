@@ -12,82 +12,72 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@TeleOp(name = "Decode RoboAvengers Safe Gameday ", group = "RoboAvengers")
-public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
+@TeleOp(name = "Decode RoboAvengers (ALT)", group = "RoboAvengers")
+public class DecodeRoboAvengersLaunchDualPower extends LinearOpMode {
 
-    // ----------------- Drive / Pinpoint -----------------
+    // ---------------- Drive / Pinpoint ----------------
     private DcMotor leftFront, rightFront, leftBack, rightBack;
     private GoBildaPinpointDriver pinpoint;
     private boolean fieldCentric = true;
     private double headingOffsetRad = 0.0;
 
-    // ----------------- Intake / Launch -----------------
+    // ---------------- Intake / Launch ----------------
     private DcMotor intake;
     private DcMotorEx leftLauncher, rightLauncher;
 
-    // ----------------- Launcher constants -----------------
-    private static final double TPR = 28.0;
-    private static double rpmToTicksPerSec(double rpm) { return rpm * TPR / 60.0; }
-    private static final double LAUNCH_CLOSE_RPM = 4000;
-    private static double LEFT_POWER_SCALE = 0.70; // boost power since encoder dead
-    private double launcherTargetTPS = rpmToTicksPerSec(LAUNCH_CLOSE_RPM);
+    // ---------------- Launcher Power Settings ----------------
+    private static double LEFT_LAUNCH_POWER  = 0.7;
+    private static double RIGHT_LAUNCH_POWER = 0.7;
 
-    private static final int VEL_TOL = 350;
-    private static final int READY_CYCLES = 2;
-    private int leftReadyCount = 0, rightReadyCount = 0;
+    // ---------------- Timings ----------------
+    private static final double SPINUP_TIME_SEC   = 2.0;
+    private static final double FEED_TIME_SEC     = 1.0;
+    private static final double REVERSE_TIME_SEC  = 1.0;
+    private static final double STOP_DELAY_SEC    = 0.25;
+    private static final double FEED_POWER        = 1.0;
 
     private enum LaunchState { IDLE, SPIN_UP, LAUNCHING, STOPPING, REVERSE }
-    private LaunchState leftState = LaunchState.IDLE;
+    private LaunchState leftState  = LaunchState.IDLE;
     private LaunchState rightState = LaunchState.IDLE;
 
-    private ElapsedTime leftTimer = new ElapsedTime();
+    private ElapsedTime leftTimer  = new ElapsedTime();
     private ElapsedTime rightTimer = new ElapsedTime();
-    private static final double FEED_TIME_SECONDS = 1.0;
-    private static final double FEED_POWER = 1.0;
-
-    // PIDF (for right side only)
-    private static final double P_GAIN = 25.0;
-    private static final double I_GAIN = 0.0;
-    private static final double D_GAIN = 5.0;
-    private static double RIGHT_F_GAIN = 12.0;
 
     @Override
     public void runOpMode() throws InterruptedException {
 
         // ---- Map hardware ----
-        leftFront  = firstMotor("front_left_drive", "frontLeftMotor");
+        leftFront  = firstMotor("front_left_drive",  "frontLeftMotor");
         rightFront = firstMotor("front_right_drive", "frontRightMotor");
-        leftBack   = firstMotor("back_left_drive",  "backLeftMotor");
-        rightBack  = firstMotor("back_right_drive", "backRightMotor");
-
-        intake = getMotor("intake");
+        leftBack   = firstMotor("back_left_drive",   "backLeftMotor");
+        rightBack  = firstMotor("back_right_drive",  "backRightMotor");
+        intake        = getMotor("intake");
         leftLauncher  = getMotorEx("left_launcher");
         rightLauncher = getMotorEx("right_launcher");
 
-        // ---- Launcher setup ----
-        if (leftLauncher != null) {
-            leftLauncher.setZeroPowerBehavior(BRAKE);
-            leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
-            leftLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER); // encoder dead
-        }
-
-        if (rightLauncher != null) {
-            rightLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-            rightLauncher.setZeroPowerBehavior(BRAKE);
-            rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
-            rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            rightLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, RIGHT_F_GAIN);
-        }
-
-        if (intake != null) intake.setDirection(DcMotorSimple.Direction.REVERSE);
-
-        if (leftFront != null) leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
-        if (leftBack  != null) leftBack.setDirection(DcMotorSimple.Direction.REVERSE);
-        if (rightFront!= null) rightFront.setDirection(DcMotorSimple.Direction.FORWARD);
-        if (rightBack != null) rightBack.setDirection(DcMotorSimple.Direction.FORWARD);
+        // ---- Drive setup ----
+        if (leftFront  != null) leftFront.setDirection(DcMotorSimple.Direction.REVERSE);
+        if (leftBack   != null) leftBack.setDirection(DcMotorSimple.Direction.REVERSE);
+        if (rightFront != null) rightFront.setDirection(DcMotorSimple.Direction.FORWARD);
+        if (rightBack  != null) rightBack.setDirection(DcMotorSimple.Direction.FORWARD);
         setBrake(leftFront, rightFront, leftBack, rightBack);
 
-        // ---- Pinpoint setup ----
+        // ---- Intake ----
+        if (intake != null) intake.setDirection(DcMotorSimple.Direction.REVERSE);
+
+        // ---- Launcher setup ----
+        if (leftLauncher != null) {
+            leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+            leftLauncher.setZeroPowerBehavior(BRAKE);
+            leftLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        }
+        if (rightLauncher != null) {
+            rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+            rightLauncher.setZeroPowerBehavior(BRAKE);
+            rightLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        }
+
+        // ---- Pinpoint ----
         try {
             pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, "pinpoint");
             pinpoint.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
@@ -103,12 +93,9 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
             fieldCentric = false;
         }
 
-        telemetry.addLine("RoboAvengers TeleOp READY. Press Play.");
+        telemetry.addLine("TeleOp READY — Dual Power Launchers");
         telemetry.update();
         waitForStart();
-
-        if (rightLauncher != null)
-            rightLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, RIGHT_F_GAIN);
 
         while (opModeIsActive()) {
 
@@ -123,46 +110,41 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
             double driveScale = gamepad1.right_bumper ? 1.0 : (gamepad1.left_bumper ? 0.4 : 0.7);
             mecanumDrive(y, x, rx, driveScale);
 
-            // --------------- INTAKE (manual) ---------------
+            // --------------- INTAKE ---------------
             if (intake != null && leftState == LaunchState.IDLE && rightState == LaunchState.IDLE) {
                 double in1 = gamepad1.right_trigger;
                 double out1 = gamepad1.left_trigger;
                 double in2 = gamepad2.right_trigger;
                 double out2 = gamepad2.left_trigger;
-
                 double in = Math.max(in1, in2);
                 double out = Math.max(out1, out2);
                 double p = 0;
                 if (out > 0.01) p = -out;
                 else if (in > 0.01) p = in;
-
                 intake.setPower(p);
             }
 
-            // --------------- CLEAR / EMERGENCY STOP ---------------
+            // --------------- CLEAR / STOP ---------------
             if (gamepad2.y) clearAll();
 
-            // --------------- SHOOT CONTROLS ---------------
+            // --------------- SHOOT + UNJAM ---------------
             boolean unjamPressed = gamepad2.x;
             launchLeft(gamepad2.left_bumper, unjamPressed);
             launchRight(gamepad2.right_bumper, unjamPressed);
 
             // --------------- UNJAM MANUAL ---------------
             if (gamepad2.x
-                    && leftState == LaunchState.IDLE
-                    && rightState == LaunchState.IDLE) {
+                    && leftState == DecodeRoboAvengersLaunchDualPower.LaunchState.IDLE
+                    && rightState == DecodeRoboAvengersLaunchDualPower.LaunchState.IDLE) {
                 startReverseUnjam();
             }
 
-            // --------------- TELEMETRY ---------------
+            // --------------- Telemetry ---------------
             if (pinpoint != null) {
                 pinpoint.update();
                 telemetry.addData("Heading(deg)", Math.toDegrees(getYawRad()));
                 telemetry.addData("FieldCentric", fieldCentric);
             }
-
-            telemetry.addData("Launcher Target (tps)", launcherTargetTPS);
-            telemetry.addData("Right Vel (tps)", rightLauncher != null ? rightLauncher.getVelocity() : 0);
             telemetry.addData("Left State", leftState);
             telemetry.addData("Right State", rightState);
             telemetry.addData("Intake Power", intake != null ? intake.getPower() : 0);
@@ -173,23 +155,15 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
         setPower(0, 0, 0, 0);
     }
 
-    // ----------------- Helpers -----------------
+    // ---------------- Helpers ----------------
     private void clearAll() {
         stopLaunchers();
         if (intake != null) intake.setPower(0);
         leftTimer.reset();
         rightTimer.reset();
-        leftState = LaunchState.IDLE;
-        rightState = LaunchState.IDLE;
-        leftReadyCount = 0;
-        rightReadyCount = 0;
-        telemetry.addLine("CLEAR ALL triggered — all systems reset.");
+        leftState = rightState = LaunchState.IDLE;
+        telemetry.addLine("CLEAR ALL triggered — reset complete.");
         telemetry.update();
-    }
-
-    private double getYawRad() {
-        if (pinpoint == null) return 0.0;
-        return pinpoint.getHeading(AngleUnit.RADIANS) - headingOffsetRad;
     }
 
     private void mecanumDrive(double y, double x, double rx, double scale) {
@@ -218,7 +192,8 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
     }
 
     private void setBrake(DcMotor... motors) {
-        for (DcMotor m : motors) if (m != null) m.setZeroPowerBehavior(BRAKE);
+        for (DcMotor m : motors)
+            if (m != null) m.setZeroPowerBehavior(BRAKE);
     }
 
     private void zeroHeading() {
@@ -228,66 +203,45 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
         }
     }
 
-    // ----------------- Launcher Control -----------------
-    private void startLeftLauncher() {
-        if (leftLauncher == null) return;
-        leftLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        leftLauncher.setPower(LEFT_POWER_SCALE);
+    private double getYawRad() {
+        if (pinpoint == null) return 0.0;
+        return pinpoint.getHeading(AngleUnit.RADIANS) - headingOffsetRad;
     }
 
-    private void startRightLauncher() {
-        if (rightLauncher == null) return;
-        double adjusted = getVoltageCompensatedVelocity(launcherTargetTPS);
-        rightLauncher.setVelocity(adjusted);
+    // ---------------- Launcher Control ----------------
+    private void startLaunchers() {
+        if (leftLauncher != null)  leftLauncher.setPower(LEFT_LAUNCH_POWER);
+        if (rightLauncher != null) rightLauncher.setPower(RIGHT_LAUNCH_POWER);
     }
 
-    private void stopLeftLauncher() { if (leftLauncher != null) leftLauncher.setPower(0); }
-    private void stopRightLauncher() { if (rightLauncher != null) rightLauncher.setPower(0); }
-    private void stopLaunchers() { stopLeftLauncher(); stopRightLauncher(); }
-
-    private double getVoltageCompensatedVelocity(double targetTicksPerSec) {
-        double nominalVoltage = 13.0, currentVoltage = 12.0;
-        try { currentVoltage = hardwareMap.voltageSensor.iterator().next().getVoltage(); }
-        catch (Exception e) {}
-        return targetTicksPerSec * (nominalVoltage / currentVoltage);
-    }
-
-    private boolean rightReady() {
-        if (rightLauncher == null) return false;
-        boolean inTol = Math.abs(rightLauncher.getVelocity() - launcherTargetTPS) <= VEL_TOL;
-        rightReadyCount = inTol ? Math.min(READY_CYCLES, rightReadyCount + 1) : 0;
-        return rightReadyCount >= READY_CYCLES;
-    }
-
-    private boolean leftReady() {
-        // encoder dead → just wait a bit
-        return leftTimer.seconds() > 0.5;
+    private void stopLaunchers() {
+        if (leftLauncher != null)  leftLauncher.setPower(0);
+        if (rightLauncher != null) rightLauncher.setPower(0);
     }
 
     private void startReverseUnjam() {
         if (intake != null) intake.setPower(0);
-        leftTimer.reset();
-        rightTimer.reset();
-        leftState = LaunchState.REVERSE;
-        rightState = LaunchState.REVERSE;
         if (leftLauncher != null)  leftLauncher.setPower(-0.4);
         if (rightLauncher != null) rightLauncher.setPower(-0.4);
+        leftState = rightState = LaunchState.REVERSE;
+        leftTimer.reset();
+        rightTimer.reset();
     }
 
-    // ----------------- STATE MACHINES -----------------
+    // ---------------- State Machines ----------------
     private void launchLeft(boolean shootRequested, boolean unjamRequested) {
         if (leftLauncher == null || intake == null) return;
         switch (leftState) {
             case IDLE:
                 if (shootRequested) {
-                    startLeftLauncher();
                     leftTimer.reset();
+                    startLaunchers();
                     leftState = LaunchState.SPIN_UP;
                 }
                 break;
 
             case SPIN_UP:
-                if (leftReady()) {
+                if (leftTimer.seconds() > SPINUP_TIME_SEC) {
                     intake.setPower(FEED_POWER);
                     leftTimer.reset();
                     leftState = LaunchState.LAUNCHING;
@@ -301,7 +255,7 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
                     startReverseUnjam();
                     break;
                 }
-                if (leftTimer.seconds() > FEED_TIME_SECONDS) {
+                if (leftTimer.seconds() > FEED_TIME_SEC) {
                     intake.setPower(0);
                     leftTimer.reset();
                     leftState = LaunchState.STOPPING;
@@ -309,26 +263,16 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
                 break;
 
             case STOPPING:
-                if (unjamRequested) {
+                if (unjamRequested) { startReverseUnjam(); break; }
+                if (leftTimer.seconds() > STOP_DELAY_SEC) {
                     stopLaunchers();
-                    startReverseUnjam();
-                    break;
-                }
-                if (leftTimer.seconds() > 0.25) {
-                    stopLeftLauncher();
                     leftState = LaunchState.IDLE;
                 }
                 break;
 
             case REVERSE:
-                if (leftTimer.seconds() < 1.0) {
-                    if (leftLauncher != null)  leftLauncher.setPower(-0.4);
-                    if (rightLauncher != null) rightLauncher.setPower(-0.4);
-                } else {
+                if (leftTimer.seconds() > REVERSE_TIME_SEC) {
                     stopLaunchers();
-                    leftTimer.reset();
-                    rightTimer.reset();
-                    leftReadyCount = rightReadyCount = 0;
                     leftState = rightState = LaunchState.IDLE;
                 }
                 break;
@@ -340,30 +284,23 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
         switch (rightState) {
             case IDLE:
                 if (shootRequested) {
-                    startRightLauncher();
                     rightTimer.reset();
+                    startLaunchers();
                     rightState = LaunchState.SPIN_UP;
                 }
                 break;
 
             case SPIN_UP:
-                if (rightReady()) {
-                    if (rightTimer.seconds() > 0.3) {
-                        intake.setPower(FEED_POWER);
-                        rightTimer.reset();
-                        rightState = LaunchState.LAUNCHING;
-                    }
-                } else rightTimer.reset();
+                if (rightTimer.seconds() > SPINUP_TIME_SEC) {
+                    intake.setPower(FEED_POWER);
+                    rightTimer.reset();
+                    rightState = LaunchState.LAUNCHING;
+                }
                 break;
 
             case LAUNCHING:
-                if (unjamRequested) {
-                    intake.setPower(0);
-                    stopLaunchers();
-                    startReverseUnjam();
-                    break;
-                }
-                if (rightTimer.seconds() > FEED_TIME_SECONDS) {
+                if (unjamRequested) { startReverseUnjam(); break; }
+                if (rightTimer.seconds() > FEED_TIME_SEC) {
                     intake.setPower(0);
                     rightTimer.reset();
                     rightState = LaunchState.STOPPING;
@@ -371,33 +308,23 @@ public class DecodeRoboAvengersLaunchNov8 extends LinearOpMode {
                 break;
 
             case STOPPING:
-                if (unjamRequested) {
+                if (unjamRequested) { startReverseUnjam(); break; }
+                if (rightTimer.seconds() > STOP_DELAY_SEC) {
                     stopLaunchers();
-                    startReverseUnjam();
-                    break;
-                }
-                if (rightTimer.seconds() > 0.25) {
-                    stopRightLauncher();
                     rightState = LaunchState.IDLE;
                 }
                 break;
 
             case REVERSE:
-                if (rightTimer.seconds() < 1.0) {
-                    if (leftLauncher != null)  leftLauncher.setPower(-0.4);
-                    if (rightLauncher != null) rightLauncher.setPower(-0.4);
-                } else {
+                if (rightTimer.seconds() > REVERSE_TIME_SEC) {
                     stopLaunchers();
-                    leftTimer.reset();
-                    rightTimer.reset();
-                    leftReadyCount = rightReadyCount = 0;
                     leftState = rightState = LaunchState.IDLE;
                 }
                 break;
         }
     }
 
-    // ----------------- Safe Hardware Getters -----------------
+    // ---------------- Safe Getters ----------------
     private DcMotor firstMotor(String primary, String alt) {
         DcMotor m = getMotor(primary);
         if (m == null) m = getMotor(alt);
