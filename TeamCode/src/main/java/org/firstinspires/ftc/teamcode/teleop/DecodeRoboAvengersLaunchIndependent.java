@@ -26,9 +26,9 @@ public class DecodeRoboAvengersLaunchIndependent extends LinearOpMode {
     private DcMotorEx leftLauncher, rightLauncher;
 
     // ---------------- Launcher Power Settings ----------------
-    private static final double LEFT_LAUNCH_POWER  = 0.7;
-    private static final double RIGHT_LAUNCH_POWER = 0.7;
-    private static final double FEED_POWER         = 1.0;
+    private static double LEFT_LAUNCH_POWER  = 0.7;
+    private static double RIGHT_LAUNCH_POWER = 0.7;
+    private static final double FEED_POWER = 1.0;
 
     // ---------------- Timings ----------------
     private static final double SPINUP_TIME_SEC  = 2.0;

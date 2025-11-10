@@ -11,8 +11,8 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@Autonomous(name = "Back + Fire Red Nov8", group = "RoboAvengers")
-public class BackFireRedNov8 extends LinearOpMode {
+@Autonomous(name = "Back + Fire Red", group = "RoboAvengers")
+public class BackFireRedNov12 extends LinearOpMode {
 
     // ---------------- Drive and Launch Motors ----------------
     private DcMotor leftFront, rightFront, leftBack, rightBack;
@@ -23,19 +23,23 @@ public class BackFireRedNov8 extends LinearOpMode {
     // ---------------- Motion Tuning ----------------
     private static final double MAX_DRIVE_POWER = 0.5;
     private static final double MAX_TURN_POWER  = 0.4;
-    private static final double kDrive = 0.02;   // position → power
-    private static final double kTurn  = 0.01;  // heading → power
+    private static final double kDrive = 0.025;
+    private static final double kTurn  = 0.012;
+    private static final double TURN_MIN_POWER = 0.20;
 
     // ---------------- Launcher Power Settings ----------------
-    // Tune these manually
-    private static double LEFT_LAUNCH_POWER  = 0.7;
-    private static double RIGHT_LAUNCH_POWER = 0.7;
+    private static double LEFT_LAUNCH_POWER  = 0.6;
+    private static double RIGHT_LAUNCH_POWER = 0.6;
 
     // ---------------- State Machine ----------------
-    private enum AutoState { BACK, FIRE, STOP, MORE, TURN_RIGHT, DONE }
+    private enum AutoState { BACK, FIRE, TURN_RIGHT, FORWARD, DONE }
     private AutoState state = AutoState.BACK;
+    private AutoState lastState = null;
 
     private int stableCount = 0;
+    private boolean xForwardIsPositive = true;
+    private double lastX = 0;
+    private long wrongWayCount = 0;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -56,7 +60,7 @@ public class BackFireRedNov8 extends LinearOpMode {
         if (intake != null) intake.setDirection(DcMotorSimple.Direction.REVERSE);
         setBrake(leftFront, rightFront, leftBack, rightBack);
 
-        // --- Launcher Directions ---
+        // --- Launcher Setup ---
         if (leftLauncher != null) {
             leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
             leftLauncher.setZeroPowerBehavior(BRAKE);
@@ -88,6 +92,19 @@ public class BackFireRedNov8 extends LinearOpMode {
             }
             pinpoint.resetPosAndIMU();
 
+            // --- Axis Sanity Check ---
+            pinpoint.update();
+            double x0 = pinpoint.getPosX(DistanceUnit.INCH);
+            setPower(0.2, 0.2, 0.2, 0.2);
+            sleep(300);
+            stopDrive();
+            pinpoint.update();
+            double dx = pinpoint.getPosX(DistanceUnit.INCH) - x0;
+            xForwardIsPositive = (dx >= 0);
+            pinpoint.resetPosAndIMU();
+            telemetry.addData("Axis check", "forwardIsPositiveX=%s (dx=%.2f)", xForwardIsPositive, dx);
+            telemetry.update();
+
         } catch (Exception e) {
             telemetry.addLine("Pinpoint not found — continuing without odometry.");
             telemetry.update();
@@ -95,21 +112,27 @@ public class BackFireRedNov8 extends LinearOpMode {
             pinpoint = null;
         }
 
-        telemetry.addLine("READY: Back + Fire (Power Tune)");
+        telemetry.addLine("READY: Back + Fire Red (Axis Safe)");
         telemetry.addData("Left Launch Power", LEFT_LAUNCH_POWER);
         telemetry.addData("Right Launch Power", RIGHT_LAUNCH_POWER);
         telemetry.update();
 
         waitForStart();
 
-        // --- State Machine Loop ---
+        // --- Main Loop ---
         while (opModeIsActive() && state != AutoState.DONE) {
             if (pinpoint != null) pinpoint.update();
 
+            if (state != lastState) {
+                resetRuntime();
+                stableCount = 0;
+                lastState = state;
+            }
+
             switch (state) {
                 case BACK:
-                    telemetry.addLine("State: BACK 68 in");
-                    if (moveToX(-68.0)) {
+                    telemetry.addLine("State: BACK 58 in");
+                    if (moveToX(mapForwardInchesToPinpointX(-58.0)) || getRuntime() > 6.0) {
                         stopDrive();
                         sleep(500);
                         state = AutoState.FIRE;
@@ -117,38 +140,33 @@ public class BackFireRedNov8 extends LinearOpMode {
                     break;
 
                 case FIRE:
-                    telemetry.addLine("State: FIRE (Power Tune)");
+                    telemetry.addLine("State: FIRE (6 s total)");
                     startLaunchers();
                     sleep(3000);
                     if (intake != null) intake.setPower(0.8);
                     sleep(3000);
                     if (intake != null) intake.setPower(0);
                     stopLaunchers();
+                    stopDrive();
                     state = AutoState.TURN_RIGHT;
                     break;
 
-                case MORE:
-                    telemetry.addLine("State: forward 40 in");
-                    if (moveToX(-28.0)) {
+                case TURN_RIGHT:
+                    telemetry.addLine("State: TURN RIGHT -45°");
+                    if (turnToHeading(-45.0) || getRuntime() > 3.0) {
+                        stopDrive();
+                        sleep(500);
+                        state = AutoState.FORWARD;
+                    }
+                    break;
+
+                case FORWARD:
+                    telemetry.addLine("State: FORWARD 30 in");
+                    if (moveToX(mapForwardInchesToPinpointX(-28.0)) || getRuntime() > 3.0) {
                         stopDrive();
                         sleep(500);
                         state = AutoState.DONE;
                     }
-                    break;
-
-                case TURN_RIGHT:
-                    telemetry.addLine("State: TURN RIGHT 90°");
-                    if (turnToHeading(-90.0)) {  // clockwise
-                        stopDrive();
-                        sleep(500);
-                        state = AutoState.MORE;
-                    }
-                    break;
-
-                case STOP:
-                    telemetry.addLine("State: STOP");
-                    stopDrive();
-                    state = AutoState.DONE;
                     break;
 
                 default:
@@ -156,17 +174,13 @@ public class BackFireRedNov8 extends LinearOpMode {
                     break;
             }
 
-            // --- Telemetry ---
             if (pinpoint != null) {
                 telemetry.addData("X (in)", "%.1f", pinpoint.getPosX(DistanceUnit.INCH));
                 telemetry.addData("Y (in)", "%.1f", pinpoint.getPosY(DistanceUnit.INCH));
                 telemetry.addData("Heading (deg)", "%.1f", pinpoint.getHeading(AngleUnit.DEGREES));
             }
-
-            telemetry.addData("Left Power", LEFT_LAUNCH_POWER);
-            telemetry.addData("Right Power", RIGHT_LAUNCH_POWER);
-            if (leftLauncher != null) telemetry.addData("Left Vel (ticks/s)", leftLauncher.getVelocity());
-            if (rightLauncher != null) telemetry.addData("Right Vel (ticks/s)", rightLauncher.getVelocity());
+            telemetry.addData("State", state);
+            telemetry.addData("StableCount", stableCount);
             telemetry.update();
 
             idle();
@@ -179,20 +193,35 @@ public class BackFireRedNov8 extends LinearOpMode {
     }
 
     // ---------------- Motion Helpers ----------------
+    private double mapForwardInchesToPinpointX(double forwardInches) {
+        return xForwardIsPositive ? forwardInches : -forwardInches;
+    }
+
     private boolean moveToX(double targetXInches) {
         if (pinpoint == null) return true;
         double currentX = pinpoint.getPosX(DistanceUnit.INCH);
         double error = targetXInches - currentX;
         double power = kDrive * error;
-
         power = Math.max(-MAX_DRIVE_POWER, Math.min(MAX_DRIVE_POWER, power));
         setPower(power, power, power, power);
 
-        if (getRuntime() < 0.5) return false;
-        return Math.abs(error) < 1.0;
+        double dx = currentX - lastX;
+        if (Math.abs(power) > 0.05 && Math.abs(dx) > 0.01) {
+            boolean goingOpposite = Math.signum(power) != Math.signum(dx);
+            wrongWayCount = goingOpposite ? wrongWayCount + 1 : 0;
+            if (wrongWayCount > 15) {
+                stopDrive();
+                wrongWayCount = 0;
+                return true;
+            }
+        } else {
+            wrongWayCount = 0;
+        }
+        lastX = currentX;
+
+        return Math.abs(error) < 2.0;
     }
 
-    // Normalize an angle to the range (-180, +180]
     private double normalize180(double angle) {
         while (angle > 180)  angle -= 360;
         while (angle <= -180) angle += 360;
@@ -203,37 +232,23 @@ public class BackFireRedNov8 extends LinearOpMode {
         double current = normalize180(pinpoint.getHeading(AngleUnit.DEGREES));
         double error = normalize180(targetDeg - current);
 
-        // Increase turn gain a little
         double power = kTurn * error;
-
-        // Minimum power to overcome friction
-        if (Math.abs(power) < 0.18 && Math.abs(error) > 2) {
-            power = Math.copySign(0.18, power);
-        }
-
-        // Clip power
+        if (Math.abs(power) < TURN_MIN_POWER && Math.abs(error) > 2)
+            power = Math.copySign(TURN_MIN_POWER, power);
         power = Math.max(-MAX_TURN_POWER, Math.min(MAX_TURN_POWER, power));
 
-        // Apply power (left reversed)
         setPower(-power, power, -power, power);
 
-        // --- Debug Telemetry ---
         telemetry.addData("Turn Target", targetDeg);
         telemetry.addData("Current", current);
         telemetry.addData("Error", error);
         telemetry.addData("Power", power);
-        telemetry.update();
 
-        // --- Stop logic ---
-        boolean onTarget = Math.abs(error) < 5.0; // looser tolerance
+        boolean onTarget = Math.abs(error) < 5.0;
         if (onTarget) stableCount++;
         else stableCount = 0;
-
-        // Require stable heading for 10 cycles (~0.5s)
         return stableCount > 10;
     }
-
-
 
     // ---------------- Launcher Control ----------------
     private void startLaunchers() {
@@ -254,9 +269,7 @@ public class BackFireRedNov8 extends LinearOpMode {
         if (rightBack  != null) rightBack.setPower(br);
     }
 
-    private void stopDrive() {
-        setPower(0, 0, 0, 0);
-    }
+    private void stopDrive() { setPower(0, 0, 0, 0); }
 
     private void setBrake(DcMotor... motors) {
         for (DcMotor m : motors)

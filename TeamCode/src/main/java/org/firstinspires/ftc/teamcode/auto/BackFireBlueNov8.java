@@ -11,7 +11,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@Autonomous(name = "Back + Fire Blue", group = "RoboAvengers")
+@Autonomous(name = "Back + Fire Blue Nov8", group = "RoboAvengers")
 public class BackFireBlueNov8 extends LinearOpMode {
 
     // ---------------- Drive and Launch Motors ----------------
@@ -28,8 +28,8 @@ public class BackFireBlueNov8 extends LinearOpMode {
 
     // ---------------- Launcher Power Settings ----------------
     // Tune these manually
-    private static double LEFT_LAUNCH_POWER  = 0.8;
-    private static double RIGHT_LAUNCH_POWER = 0.8;
+    private static double LEFT_LAUNCH_POWER  = 0.7;
+    private static double RIGHT_LAUNCH_POWER = 0.7;
 
     // ---------------- State Machine ----------------
     private enum AutoState { BACK, FIRE, STOP, MORE, TURN_LEFT, DONE }

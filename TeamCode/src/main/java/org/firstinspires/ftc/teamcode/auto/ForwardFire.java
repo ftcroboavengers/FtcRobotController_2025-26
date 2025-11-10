@@ -11,7 +11,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@Autonomous(name = "Forward + Fire", group = "RoboAvengers")
+@Autonomous(name = "Forward + Fire Nov8", group = "RoboAvengers")
 public class ForwardFire extends LinearOpMode {
 
     // Drive motors
