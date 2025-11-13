@@ -12,13 +12,13 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-@TeleOp(name = "Decode RoboAvengers TeleOp 2025", group = "RoboAvengers")
+@TeleOp(name = "Decode RoboAvengers (PIDF)", group = "RoboAvengers")
 public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
 
     // ----------------- Drive / Pinpoint -----------------
     private DcMotor leftFront, rightFront, leftBack, rightBack;
     private GoBildaPinpointDriver pinpoint;
-    private boolean fieldCentric = true;
+    private boolean fieldCentric = false;
     private double headingOffsetRad = 0.0;
 
     // ----------------- Intake / Launch -----------------
@@ -30,8 +30,8 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
     private boolean leftLauncherOn = false;
 
     // ----------------- Launcher Targets -----------------
-    private static final double LAUNCH_CLOSE_TARGET = 1350;
-    private static final double LAUNCH_FAR_TARGET = 1350;
+    private static final double LAUNCH_CLOSE_TARGET = 800;
+    private static final double LAUNCH_FAR_TARGET = 800;
     private double launcherTarget = LAUNCH_CLOSE_TARGET;
 
     @Override
@@ -253,7 +253,7 @@ public class DecodeRoboAvengers2TeleOp extends LinearOpMode {
         try {
             currentVoltage = hardwareMap.voltageSensor.iterator().next().getVoltage();
         } catch (Exception e) {
-            telemetry.addLine("⚠️ Voltage sensor not found — using 12V default");
+            telemetry.addLine("Voltage sensor not found — using 12V default");
         }
         return targetTicksPerSec * (nominalVoltage / currentVoltage);
     }

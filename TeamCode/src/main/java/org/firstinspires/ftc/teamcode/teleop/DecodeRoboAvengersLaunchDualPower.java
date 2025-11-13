@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.teleop;
 import static com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE;
 
 import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -12,6 +13,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
+@Disabled
 @TeleOp(name = "Decode RoboAvengers (ALT)", group = "RoboAvengers")
 public class DecodeRoboAvengersLaunchDualPower extends LinearOpMode {
 
@@ -26,8 +28,8 @@ public class DecodeRoboAvengersLaunchDualPower extends LinearOpMode {
     private DcMotorEx leftLauncher, rightLauncher;
 
     // ---------------- Launcher Power Settings ----------------
-    private static double LEFT_LAUNCH_POWER  = 0.7;
-    private static double RIGHT_LAUNCH_POWER = 0.7;
+    private static double LEFT_LAUNCH_POWER  = 0.65;
+    private static double RIGHT_LAUNCH_POWER = 0.65;
 
     // ---------------- Timings ----------------
     private static final double SPINUP_TIME_SEC   = 2.0;

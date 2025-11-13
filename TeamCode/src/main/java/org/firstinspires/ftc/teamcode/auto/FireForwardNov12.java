@@ -28,8 +28,8 @@ public class FireForwardNov12 extends LinearOpMode {
     private static final double TURN_MIN_POWER = 0.20;
 
     // ---------------- Launcher Power Settings ----------------
-    private static double LEFT_LAUNCH_POWER  = 0.8;
-    private static double RIGHT_LAUNCH_POWER = 0.8;
+    private static double LEFT_LAUNCH_POWER  = 0.75;
+    private static double RIGHT_LAUNCH_POWER = 0.75;
 
     // ---------------- State Machine ----------------
     private enum AutoState { FIRE, FORWARD, DONE }
@@ -91,20 +91,6 @@ public class FireForwardNov12 extends LinearOpMode {
                 sleep(30);
             }
             pinpoint.resetPosAndIMU();
-
-            // --- Axis Sanity Check ---
-            pinpoint.update();
-            double x0 = pinpoint.getPosX(DistanceUnit.INCH);
-            setPower(0.2, 0.2, 0.2, 0.2);
-            sleep(300);
-            stopDrive();
-            pinpoint.update();
-            double dx = pinpoint.getPosX(DistanceUnit.INCH) - x0;
-            xForwardIsPositive = (dx >= 0);
-            pinpoint.resetPosAndIMU();
-            telemetry.addData("Axis check", "forwardIsPositiveX=%s (dx=%.2f)", xForwardIsPositive, dx);
-            telemetry.update();
-
         } catch (Exception e) {
             telemetry.addLine("Pinpoint not found — continuing without odometry.");
             telemetry.update();
@@ -112,12 +98,31 @@ public class FireForwardNov12 extends LinearOpMode {
             pinpoint = null;
         }
 
-        telemetry.addLine("READY: Back + Fire Red (Axis Safe)");
+        telemetry.addLine("READY: Forward + Fire (No Twitch)");
         telemetry.addData("Left Launch Power", LEFT_LAUNCH_POWER);
         telemetry.addData("Right Launch Power", RIGHT_LAUNCH_POWER);
         telemetry.update();
 
         waitForStart();
+
+        // --- Axis Sanity Check (moved here, after Start, no Init twitch) ---
+        if (pinpoint != null) {
+            pinpoint.update();
+            double x0 = pinpoint.getPosX(DistanceUnit.INCH);
+
+            // ⚠️ Use small forward test motion AFTER start
+            setPower(0.2, 0.2, 0.2, 0.2);
+            sleep(300);
+            stopDrive();
+
+            pinpoint.update();
+            double dx = pinpoint.getPosX(DistanceUnit.INCH) - x0;
+            xForwardIsPositive = (dx >= 0);
+            pinpoint.resetPosAndIMU();
+
+            telemetry.addData("Axis check", "forwardIsPositiveX=%s (dx=%.2f)", xForwardIsPositive, dx);
+            telemetry.update();
+        }
 
         // --- Main Loop ---
         while (opModeIsActive() && state != AutoState.DONE) {
@@ -130,7 +135,6 @@ public class FireForwardNov12 extends LinearOpMode {
             }
 
             switch (state) {
-
                 case FIRE:
                     telemetry.addLine("State: FIRE (6 s total)");
                     startLaunchers();
@@ -145,7 +149,8 @@ public class FireForwardNov12 extends LinearOpMode {
 
                 case FORWARD:
                     telemetry.addLine("State: FORWARD 30 in");
-                    if (moveToX(mapForwardInchesToPinpointX(30.0)) || getRuntime() > 3.0) {
+                    // 🔁 Positive means forward — make sure sign matches your setup
+                    if (moveToX(mapForwardInchesToPinpointX(30.0)) || getRuntime() > 4.0) {
                         stopDrive();
                         sleep(500);
                         state = AutoState.DONE;
@@ -177,6 +182,7 @@ public class FireForwardNov12 extends LinearOpMode {
 
     // ---------------- Motion Helpers ----------------
     private double mapForwardInchesToPinpointX(double forwardInches) {
+        // Ensures positive means forward
         return xForwardIsPositive ? forwardInches : -forwardInches;
     }
 

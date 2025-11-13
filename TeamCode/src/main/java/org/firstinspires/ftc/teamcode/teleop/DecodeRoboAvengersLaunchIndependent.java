@@ -18,7 +18,7 @@ public class DecodeRoboAvengersLaunchIndependent extends LinearOpMode {
     // ---------------- Drive / Pinpoint ----------------
     private DcMotor leftFront, rightFront, leftBack, rightBack;
     private GoBildaPinpointDriver pinpoint;
-    private boolean fieldCentric = true;
+    private boolean fieldCentric = false;
     private double headingOffsetRad = 0.0;
 
     // ---------------- Intake / Launch ----------------
@@ -26,8 +26,8 @@ public class DecodeRoboAvengersLaunchIndependent extends LinearOpMode {
     private DcMotorEx leftLauncher, rightLauncher;
 
     // ---------------- Launcher Power Settings ----------------
-    private static double LEFT_LAUNCH_POWER  = 0.7;
-    private static double RIGHT_LAUNCH_POWER = 0.7;
+    private static double LEFT_LAUNCH_POWER  = 0.65;
+    private static double RIGHT_LAUNCH_POWER = 0.65;
     private static final double FEED_POWER = 1.0;
 
     // ---------------- Timings ----------------
@@ -93,7 +93,7 @@ public class DecodeRoboAvengersLaunchIndependent extends LinearOpMode {
             fieldCentric = false;
         }
 
-        telemetry.addLine("TeleOp READY — Independent Launchers");
+        telemetry.addLine("TeleOp READY");
         telemetry.update();
         waitForStart();
 
@@ -104,6 +104,11 @@ public class DecodeRoboAvengersLaunchIndependent extends LinearOpMode {
             double x =  gamepad1.left_stick_x;
             double rx = gamepad1.right_stick_x;
 
+            // Apply deadzone
+            if (Math.abs(y) < 0.05) y = 0;
+            if (Math.abs(x) < 0.05) x = 0;
+            if (Math.abs(rx) < 0.05) rx = 0;
+
             if (gamepad1.x) fieldCentric = !fieldCentric;
             if (gamepad1.y) zeroHeading();
 
@@ -112,15 +117,14 @@ public class DecodeRoboAvengersLaunchIndependent extends LinearOpMode {
 
             // -------- INTAKE --------
             if (intake != null && leftState == LaunchState.IDLE && rightState == LaunchState.IDLE) {
-                double in1 = gamepad1.right_trigger;
-                double out1 = gamepad1.left_trigger;
-                double in2 = gamepad2.right_trigger;
-                double out2 = gamepad2.left_trigger;
-                double in = Math.max(in1, in2);
-                double out = Math.max(out1, out2);
+                double in = gamepad1.right_trigger;
+                double out = gamepad1.left_trigger;
+
                 double p = 0;
-                if (out > 0.01) p = -out;
-                else if (in > 0.01) p = in;
+                double scale = 0.7;
+                if (in > 0.01 || out > 0.01) {
+                    p = (in - out) * scale;
+                }
                 intake.setPower(p);
             }
 

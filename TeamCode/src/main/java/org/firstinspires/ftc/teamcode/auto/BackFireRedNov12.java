@@ -4,13 +4,14 @@ import static com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE;
 
 import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
-
+@Disabled
 @Autonomous(name = "Back + Fire Red", group = "RoboAvengers")
 public class BackFireRedNov12 extends LinearOpMode {
 
@@ -91,8 +92,22 @@ public class BackFireRedNov12 extends LinearOpMode {
                 sleep(30);
             }
             pinpoint.resetPosAndIMU();
+        } catch (Exception e) {
+            telemetry.addLine("Pinpoint not found — continuing without odometry.");
+            telemetry.update();
+            sleep(1000);
+            pinpoint = null;
+        }
 
-            // --- Axis Sanity Check ---
+        telemetry.addLine("READY: Back + Fire Red (No Twitch)");
+        telemetry.addData("Left Launch Power", LEFT_LAUNCH_POWER);
+        telemetry.addData("Right Launch Power", RIGHT_LAUNCH_POWER);
+        telemetry.update();
+
+        waitForStart();
+
+        // --- Axis Sanity Check (moved here, after Start) ---
+        if (pinpoint != null) {
             pinpoint.update();
             double x0 = pinpoint.getPosX(DistanceUnit.INCH);
             setPower(0.2, 0.2, 0.2, 0.2);
@@ -104,20 +119,7 @@ public class BackFireRedNov12 extends LinearOpMode {
             pinpoint.resetPosAndIMU();
             telemetry.addData("Axis check", "forwardIsPositiveX=%s (dx=%.2f)", xForwardIsPositive, dx);
             telemetry.update();
-
-        } catch (Exception e) {
-            telemetry.addLine("Pinpoint not found — continuing without odometry.");
-            telemetry.update();
-            sleep(1000);
-            pinpoint = null;
         }
-
-        telemetry.addLine("READY: Back + Fire Red (Axis Safe)");
-        telemetry.addData("Left Launch Power", LEFT_LAUNCH_POWER);
-        telemetry.addData("Right Launch Power", RIGHT_LAUNCH_POWER);
-        telemetry.update();
-
-        waitForStart();
 
         // --- Main Loop ---
         while (opModeIsActive() && state != AutoState.DONE) {
