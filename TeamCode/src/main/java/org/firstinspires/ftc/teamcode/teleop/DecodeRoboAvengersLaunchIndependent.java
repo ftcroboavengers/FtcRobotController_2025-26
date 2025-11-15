@@ -67,7 +67,7 @@ public class DecodeRoboAvengersLaunchIndependent extends LinearOpMode {
 
         // ---- Launchers ----
         if (leftLauncher != null) {
-            leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+            leftLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
             leftLauncher.setZeroPowerBehavior(BRAKE);
             leftLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         }

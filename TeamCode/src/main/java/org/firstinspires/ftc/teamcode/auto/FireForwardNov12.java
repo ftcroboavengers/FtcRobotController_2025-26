@@ -67,7 +67,7 @@ public class FireForwardNov12 extends LinearOpMode {
             leftLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         }
         if (rightLauncher != null) {
-            rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+            rightLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
             rightLauncher.setZeroPowerBehavior(BRAKE);
             rightLauncher.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         }
