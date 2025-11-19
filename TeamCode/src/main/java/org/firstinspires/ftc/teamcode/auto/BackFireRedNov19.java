@@ -124,7 +124,6 @@ public class BackFireRedNov19 extends LinearOpMode {
 
             switch (state) {
 
-                // ---------------- BACK ----------------
                 case BACK:
                     telemetry.addLine("State: BACK 58 in");
                     if (moveToX(mapForwardInchesToPinpointX(-58.0)) || getRuntime() > 6.0) {
@@ -134,7 +133,6 @@ public class BackFireRedNov19 extends LinearOpMode {
                     }
                     break;
 
-                // ---------------- FIRE ----------------
                 case FIRE:
                     telemetry.addLine("State: FIRE");
                     startLaunchers();
@@ -146,7 +144,6 @@ public class BackFireRedNov19 extends LinearOpMode {
                     state = AutoState.TURN_RIGHT;
                     break;
 
-                // ---------------- TURN RIGHT ----------------
                 case TURN_RIGHT:
                     telemetry.addLine("State: TURN RIGHT -45°");
                     if (turnToHeading(-45.0) || getRuntime() > 3.0) {
