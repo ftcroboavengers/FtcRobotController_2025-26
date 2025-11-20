@@ -4,22 +4,25 @@ import static com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 @TeleOp(name = "Launcher PIDF Tuner", group = "RoboAvengers")
 public class DecodeLauncherPIDFTuner extends LinearOpMode {
 
     private DcMotorEx leftLauncher, rightLauncher;
+    private DcMotor intake;
 
     // ---------------- PIDF GAINS (start values) ----------------
     private static final double P_GAIN = 25.0;
     private static final double I_GAIN = 0.0;
     private static final double D_GAIN = 5.0;
-    private double F_GAIN = 12.0;  // <<< this one we tune live
+    private double F_GAIN = 12.0;  // tunable in real time
 
     // ---------------- RPM / Velocity ----------------
-    private static final double TPR = 28.0; // ticks per revolution (adjust if gearbox)
+    private static final double TPR = 28.0; // ticks per revolution (adjust if using gearbox)
     private double targetRPM = 4000;
     private double targetTPS = rpmToTicksPerSec(targetRPM);
 
@@ -32,7 +35,7 @@ public class DecodeLauncherPIDFTuner extends LinearOpMode {
     private ElapsedTime unjamTimer = new ElapsedTime();
     private static final double UNJAM_TIME_SEC = 1.0;
 
-    // ---------------- Helpers ----------------
+    // ---------------- Debounce ----------------
     private boolean prevUp = false;
     private boolean prevDown = false;
     private boolean prevRight = false;
@@ -41,27 +44,38 @@ public class DecodeLauncherPIDFTuner extends LinearOpMode {
     @Override
     public void runOpMode() throws InterruptedException {
 
-        // Map launcher motors
-        leftLauncher = getMotorEx("left_launcher");
+        // MAP MOTORS
+        leftLauncher  = getMotorEx("left_launcher");
         rightLauncher = getMotorEx("right_launcher");
+        intake        = getDcMotor("intake");
 
+        // INTAKE SETUP
+        if (intake != null) {
+            intake.setZeroPowerBehavior(BRAKE);
+            intake.setDirection(DcMotorSimple.Direction.REVERSE);
+        }
+
+        // LAUNCHER SETUP
         if (leftLauncher != null) {
             leftLauncher.setZeroPowerBehavior(BRAKE);
-            leftLauncher.setDirection(com.qualcomm.robotcore.hardware.DcMotorSimple.Direction.REVERSE);
-            leftLauncher.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
-            leftLauncher.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+            leftLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
+            leftLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
             leftLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, F_GAIN);
         }
+
         if (rightLauncher != null) {
             rightLauncher.setZeroPowerBehavior(BRAKE);
-            rightLauncher.setDirection(com.qualcomm.robotcore.hardware.DcMotorSimple.Direction.FORWARD);
-            rightLauncher.setMode(DcMotorEx.RunMode.STOP_AND_RESET_ENCODER);
-            rightLauncher.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+            rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+            rightLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+            rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
             rightLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, F_GAIN);
         }
 
-        telemetry.addLine("Launcher PIDF Tuner Ready");
+        telemetry.addLine("Launcher PIDF Tuning Mode Ready");
+        telemetry.addLine("Use D-pad + bumpers + triggers for tuning");
         telemetry.update();
+
         waitForStart();
 
         while (opModeIsActive()) {
@@ -70,9 +84,7 @@ public class DecodeLauncherPIDFTuner extends LinearOpMode {
             boolean up = gamepad2.dpad_up;
             boolean down = gamepad2.dpad_down;
 
-            if (up && !prevUp) {
-                targetRPM += 100;
-            }
+            if (up && !prevUp) targetRPM += 100;
             if (down && !prevDown) {
                 targetRPM -= 100;
                 if (targetRPM < 500) targetRPM = 500;
@@ -82,13 +94,11 @@ public class DecodeLauncherPIDFTuner extends LinearOpMode {
 
             targetTPS = rpmToTicksPerSec(targetRPM);
 
-            // ---------------- F - GAIN TUNING ----------------
+            // ---------------- F-GAIN TUNING ----------------
             boolean right = gamepad2.dpad_right;
             boolean left = gamepad2.dpad_left;
 
-            if (right && !prevRight) {
-                F_GAIN += 0.5;
-            }
+            if (right && !prevRight) F_GAIN += 0.5;
             if (left && !prevLeft) {
                 F_GAIN -= 0.5;
                 if (F_GAIN < 0) F_GAIN = 0;
@@ -96,22 +106,40 @@ public class DecodeLauncherPIDFTuner extends LinearOpMode {
             prevRight = right;
             prevLeft = left;
 
-            // Apply new PIDF immediately
+            // Apply updated PIDF gains live
             if (leftLauncher != null)
                 leftLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, F_GAIN);
+
             if (rightLauncher != null)
                 rightLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, F_GAIN);
 
-            // ---------------- FIRING CONTROLS ----------------
-            if (gamepad2.right_bumper) {
+            // ---------------- LAUNCHER SPIN CONTROL ----------------
+            if (gamepad2.right_bumper && !unjamming) {
                 startLaunchers();
             }
 
-            if (gamepad2.left_bumper) {
+            if (gamepad2.left_bumper && !unjamming) {
                 stopLaunchers();
             }
 
-            // Unjam (hold X)
+            // ---------------- INTAKE CONTROL (for feeding rings) ----------------
+            if (intake != null && !unjamming) {
+                double in = gamepad2.right_trigger;  // feed into launcher
+                double out = gamepad2.left_trigger;  // reverse intake
+
+                double p = 0;
+                double scale = 1.0; // full power for consistent feeding
+
+                if (in > 0.05 || out > 0.05) {
+                    p = (in - out) * scale;
+                }
+                intake.setPower(p);
+
+                // Optional safety: B to stop intake
+                if (gamepad2.b) intake.setPower(0);
+            }
+
+            // ---------------- UNJAM (X) ----------------
             if (gamepad2.x && !unjamming) {
                 startUnjam();
             }
@@ -123,33 +151,37 @@ public class DecodeLauncherPIDFTuner extends LinearOpMode {
             double leftVel = leftLauncher != null ? leftLauncher.getVelocity() : 0;
             double rightVel = rightLauncher != null ? rightLauncher.getVelocity() : 0;
 
-            telemetry.addLine("==== LAUNCHER PIDF TUNING ====");
+            telemetry.addLine("===== LAUNCHER PIDF TUNING =====");
             telemetry.addData("Target RPM", targetRPM);
             telemetry.addData("Target TPS", targetTPS);
-            telemetry.addData("Left Vel TPS", leftVel);
-            telemetry.addData("Right Vel TPS", rightVel);
+            telemetry.addData("Left Vel (tps)", leftVel);
+            telemetry.addData("Right Vel (tps)", rightVel);
             telemetry.addData("Left Error", leftVel - targetTPS);
             telemetry.addData("Right Error", rightVel - targetTPS);
 
-            telemetry.addLine("---- PIDF ----");
+            telemetry.addLine("\n----- PIDF VALUES -----");
             telemetry.addData("P", P_GAIN);
             telemetry.addData("I", I_GAIN);
             telemetry.addData("D", D_GAIN);
-            telemetry.addData("F (Tunable)", F_GAIN);
+            telemetry.addData("F (tunable)", F_GAIN);
 
-            telemetry.addLine("---- Controls ----");
-            telemetry.addLine("D-pad Up:   +100 RPM");
-            telemetry.addLine("D-pad Down: -100 RPM");
-            telemetry.addLine("D-pad Right: +0.5 F");
-            telemetry.addLine("D-pad Left:  -0.5 F");
-            telemetry.addLine("Right Bumper: START launchers");
+            telemetry.addLine("\n----- CONTROLS -----");
+            telemetry.addLine("D-pad Up:     Increase RPM (+100)");
+            telemetry.addLine("D-pad Down:   Decrease RPM (-100)");
+            telemetry.addLine("D-pad Right:  Increase F (+0.5)");
+            telemetry.addLine("D-pad Left:   Decrease F (-0.5)");
+            telemetry.addLine("Right Bumper: Spin UP launchers");
             telemetry.addLine("Left Bumper:  STOP launchers");
+            telemetry.addLine("Right Trigger: Intake FEED");
+            telemetry.addLine("Left Trigger:  Intake REVERSE");
+            telemetry.addLine("B: STOP intake");
             telemetry.addLine("X: UNJAM");
 
             telemetry.update();
         }
 
         stopLaunchers();
+        if (intake != null) intake.setPower(0);
     }
 
     // ---------------- Helper Methods ----------------
@@ -175,21 +207,25 @@ public class DecodeLauncherPIDFTuner extends LinearOpMode {
 
         if (leftLauncher != null) leftLauncher.setPower(-0.4);
         if (rightLauncher != null) rightLauncher.setPower(-0.4);
+        if (intake != null) intake.setPower(-1.0);
     }
 
     private void updateUnjam() {
         if (unjamTimer.seconds() > UNJAM_TIME_SEC) {
             unjamming = false;
             stopLaunchers();
+            if (intake != null) intake.setPower(0);
         }
     }
 
     private double getVoltageCompensatedVelocity(double targetTicksPerSec) {
         double nominalVoltage = 13.0;
         double currentVoltage = 12.0;
+
         try {
             currentVoltage = hardwareMap.voltageSensor.iterator().next().getVoltage();
         } catch (Exception e) {}
+
         if (currentVoltage <= 0) currentVoltage = 12.0;
 
         return targetTicksPerSec * (nominalVoltage / currentVoltage);
@@ -198,6 +234,14 @@ public class DecodeLauncherPIDFTuner extends LinearOpMode {
     private DcMotorEx getMotorEx(String name) {
         try {
             return hardwareMap.get(DcMotorEx.class, name);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private DcMotor getDcMotor(String name) {
+        try {
+            return hardwareMap.get(DcMotor.class, name);
         } catch (Exception e) {
             return null;
         }
