@@ -163,6 +163,12 @@ public class BackFireRedNov19 extends LinearOpMode {
                     }
                     break;
 
+                case INTAKE:
+                    if (intake != null) intake.setPower(0.8);
+                    sleep(3000);
+                    if (intake != null) intake.setPower(0);
+                    state = AutoState.SHORTBACK;
+
                 default:
                     state = AutoState.DONE;
                     break;

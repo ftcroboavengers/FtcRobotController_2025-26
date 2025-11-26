@@ -24,38 +24,39 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
     private DcMotor intake;
     private DcMotorEx leftLauncher, rightLauncher;
 
-    // ---------------- Launcher RPM / PIDF ----------------
-    private static final double TPR = 28.0; // ticks per revolution (GoBilda encoder, adjust if geared)
+    // ---------------- PIDF STUFF ----------------
+    private static final double TPR = 28.0; // ticks per revolution (Gobilda encoder)
+    private double launcherTargetTPS = rpmToTicksPerSec(4000.0);
 
     private static double rpmToTicksPerSec(double rpm) {
         return rpm * TPR / 60.0;
     }
 
-    // Default close/far ranges (only used as clamps)
-    private static final double MIN_RPM = 3500.0;
-    private static final double MAX_RPM = 6000.0;
-
-    // Dynamic target velocity (ticks/sec)
-    private double launcherTargetTPS = rpmToTicksPerSec(4000.0);
-
-    // Velocity tolerance for "ready"
-    private static final int VEL_TOL = 250;      // ticks/sec tolerance
-    private static final int READY_CYCLES = 2;   // consecutive loops in tolerance
-    private int leftReadyCount  = 0;
-    private int rightReadyCount = 0;
-
-    // PIDF gains (tune F per motor as needed)
+    // PIDF Gains
     private static final double P_GAIN = 25.0;
     private static final double I_GAIN = 0.0;
     private static final double D_GAIN = 5.0;
     private static final double LEFT_F_GAIN  = 12.0;
     private static final double RIGHT_F_GAIN = 12.0;
 
-    // ---------------- Timings ----------------
+    // Launcher “ready” tolerance
+    private static final double VEL_TOL = 250;
+    private static final int READY_CYCLES = 2;
+    private int leftReadyCount = 0;
+    private int rightReadyCount = 0;
+
+    // Timings
     private static final double FEED_TIME_SEC    = 1.0;
     private static final double STOP_DELAY_SEC   = 0.25;
     private static final double REVERSE_TIME_SEC = 1.0;
     private static final double FEED_POWER       = 1.0;
+
+    // ---------------- Manual Launcher States ----------------
+    private enum LaunchState { IDLE, SPIN_UP, LAUNCHING, STOPPING, REVERSE }
+    private LaunchState leftState  = LaunchState.IDLE;
+    private LaunchState rightState = LaunchState.IDLE;
+    private ElapsedTime leftTimer  = new ElapsedTime();
+    private ElapsedTime rightTimer = new ElapsedTime();
 
     // ---------------- Auto-Shoot State Machine ----------------
     private enum AutoShootState { IDLE, FIND_TAG, AIMING, SPINUP, FEEDING, STOPPING }
@@ -63,32 +64,30 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
 
     private ElapsedTime autoTimer = new ElapsedTime();
     private ElapsedTime feedTimer = new ElapsedTime();
-    private ElapsedTime unjamTimer = new ElapsedTime();
 
-    private boolean prevAutoButton = false;
-
-    // Auto-aim stability
-    private static final double AIM_TOL_DEG = 2.0;      // acceptable bearing error
+    // Auto-aim values
+    private static final int RED_CENTER_TAG_ID = 2;
+    private static final double AIM_TOL_DEG = 2.0;
     private static final int AIM_STABLE_LOOPS = 5;
     private int aimStableCount = 0;
-
-    // Spin-up timing
-    private static final double MIN_SPINUP_SEC   = 0.3;
-    private static final double SPINUP_TIMEOUT_S = 3.0;
-    private static final double FIND_TIMEOUT_S   = 2.0;
-
-    // ---------------- AprilTag Vision ----------------
-    private VisionPortal visionPortal;
-    private AprilTagProcessor tagProcessor;
-
-    private static final int RED_CENTER_TAG_ID = 2; // main target
-    private static final double TAG_MIN_CONF   = 0.6;
 
     private double lastTagDistanceM = -1;
     private double lastTagBearingDeg = 0;
 
-    // ---------------- Unjam flag ----------------
+    // Auto-shoot timeouts
+    private static final double MIN_SPINUP_SEC   = 0.3;
+    private static final double SPINUP_TIMEOUT_S = 3.0;
+    private static final double FIND_TIMEOUT_S   = 2.0;
+
+    // ---------------- Vision System ----------------
+    private VisionPortal visionPortal;
+    private AprilTagProcessor tagProcessor;
+
+    // ---------------- Unjam ----------------
     private boolean unjamming = false;
+    private ElapsedTime unjamTimer = new ElapsedTime();
+
+    private static final double TAG_MIN_CONF = 0.6;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -113,78 +112,45 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
         // ---- Intake ----
         if (intake != null) intake.setDirection(DcMotorSimple.Direction.REVERSE);
 
-        // ---- Launchers (encoder + PIDF) ----
-        if (leftLauncher != null) {
-            leftLauncher.setZeroPowerBehavior(BRAKE);
-            leftLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
-            leftLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-            leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            leftLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, LEFT_F_GAIN);
-        }
-        if (rightLauncher != null) {
-            rightLauncher.setZeroPowerBehavior(BRAKE);
-            rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
-            rightLauncher.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-            rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            rightLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, RIGHT_F_GAIN);
-        }
+        // ---- Launchers ----
+        initLauncher(leftLauncher, true);
+        initLauncher(rightLauncher, false);
 
         // ---- Vision ----
         initAprilTags();
 
-        telemetry.addLine("TeleOp READY: AutoShoot Red Enabled");
+        telemetry.addLine("TeleOp READY: AutoShoot + Manual Shoot.");
         telemetry.update();
         waitForStart();
 
-        // Re-apply PIDF after start in case FTC SDK touches it
-        if (leftLauncher != null) {
-            leftLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, LEFT_F_GAIN);
-        }
-        if (rightLauncher != null) {
-            rightLauncher.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, RIGHT_F_GAIN);
-        }
+        // Reapply PIDF after start
+        setPIDF(leftLauncher, LEFT_F_GAIN);
+        setPIDF(rightLauncher, RIGHT_F_GAIN);
 
         while (opModeIsActive()) {
 
-            // -------- Read controls --------
-            boolean autoButton = gamepad2.right_stick_button; // one-button AutoShoot
-            boolean cancelButton = gamepad2.b;
-            boolean unjamButton = gamepad2.x;
-
-            // Edge detection for starting AutoShoot
-            if (autoButton && !prevAutoButton && autoState == AutoShootState.IDLE && !unjamming) {
-                startAutoShoot();
+            // Manual unjam override
+            boolean unjamPressed = gamepad2.x;
+            if (unjamPressed && autoState == AutoShootState.IDLE) {
+                startReverseUnjam();
             }
-            prevAutoButton = autoButton;
+            if (unjamming) updateUnjam();
 
-            // Cancel AutoShoot
-            if (cancelButton) {
-                cancelAutoShoot();
-            }
-
-            // Unjam (manual)
-            if (unjamButton && !unjamming && autoState == AutoShootState.IDLE) {
-                startUnjam();
-            }
-            if (unjamming) {
-                updateUnjam();
-            }
-
-            // -------- DRIVE --------
+            // --------------------------------
+            // DRIVE CONTROL
+            // --------------------------------
             double y = -gamepad1.left_stick_y;
             double x =  gamepad1.left_stick_x;
-            double rx =  gamepad1.right_stick_x;
+            double rx = gamepad1.right_stick_x;
 
-            // Apply deadzone
             if (Math.abs(y) < 0.05) y = 0;
             if (Math.abs(x) < 0.05) x = 0;
             if (Math.abs(rx) < 0.05) rx = 0;
 
             double driveScale = gamepad1.right_bumper ? 1.0 : (gamepad1.left_bumper ? 0.4 : 0.7);
 
-            // During AIMING, override rotation with auto-aim; block translation
+            // Auto aim blocks driving
             if (autoState == AutoShootState.AIMING) {
-                // Use vision-based bearing to set rx
                 AprilTagDetection tag = getBestRedTag();
                 if (tag != null && tag.ftcPose != null) {
                     lastTagBearingDeg = tag.ftcPose.bearing;
@@ -192,39 +158,93 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
                 }
                 double autoRx = computeAimTurnPower(lastTagBearingDeg);
                 mecanumDrive(0, 0, autoRx, driveScale);
+
             } else if (autoState == AutoShootState.IDLE) {
-                // Normal driver control
+                // driver normal
                 mecanumDrive(y, x, rx, driveScale);
+
             } else {
-                // Other auto states: keep robot still
-                mecanumDrive(0, 0, 0, driveScale);
+                // other auto states → freeze
+                mecanumDrive(0, 0, 0, 1.0);
             }
 
-            // -------- INTAKE (manual only when not auto-shooting or unjamming) --------
-            if (intake != null && autoState == AutoShootState.IDLE && !unjamming) {
+            // --------------------------------
+            // INTAKE (manual only)
+            // --------------------------------
+            if (!unjamming && autoState == AutoShootState.IDLE) {
                 double in = gamepad1.right_trigger;
                 double out = gamepad1.left_trigger;
-
-                double p = 0;
-                double scale = 0.7;
-                if (in > 0.01 || out > 0.01) {
-                    p = (in - out) * scale;
-                }
-                intake.setPower(p);
+                double p = (in - out) * 1.0;
+                if (intake != null) intake.setPower(p);
             }
 
-            // -------- AutoShoot State Machine --------
+            // --------------------------------
+            // AUTO-SHOOT START (one button)
+            // --------------------------------
+            if (autoState == AutoShootState.IDLE &&
+                    gamepad2.dpad_up && !unjamming) {
+                startAutoShoot();
+            }
+
+            // Manual cancel
+            if (gamepad2.dpad_down) {
+                cancelAutoShoot();
+            }
+
+            // --------------------------------
+            // MANUAL SHOOTING (left & right)
+            // --------------------------------
+            launchLeft(gamepad2.left_bumper, unjamPressed);
+            launchRight(gamepad2.right_bumper, unjamPressed);
+
+            // --------------------------------
+            // MANUAL SHOOTING PRESETS (gamepad2)
+            // --------------------------------
+            if (autoState == AutoShootState.IDLE && !unjamming) {
+
+                // A → CLOSE TRIANGLE
+                if (gamepad2.a) {
+                    double rpm = 2600;
+                    launcherTargetTPS = rpmToTicksPerSec(rpm);
+                    applyDynamicF(rpm);  // sets F = 12
+                    telemetry.addLine("Preset: CLOSE (2600 rpm, F=12)");
+                }
+
+                // Y → FAR TRIANGLE
+                if (gamepad2.y) {
+                    double rpm = 2800;
+                    launcherTargetTPS = rpmToTicksPerSec(rpm);
+                    applyDynamicF(rpm);  // sets F = 17
+                    telemetry.addLine("Preset: FAR (2800 rpm, F=17)");
+                }
+
+                // B → SMALL SIDE TRIANGLE
+                if (gamepad2.b) {
+                    // (ignore B used for canceling auto-shoot)
+                    double rpm = 2500;
+                    launcherTargetTPS = rpmToTicksPerSec(rpm);
+                    applyDynamicF(rpm);  // sets F = 11
+                    telemetry.addLine("Preset: SIDE (2500 rpm, F=11)");
+                }
+            }
+
+
+            // --------------------------------
+            // AUTO-SHOOTING STATE MACHINE
+            // --------------------------------
             updateAutoShoot();
 
-            // -------- Telemetry --------
+            // --------------------------------
+            // TELEMETRY
+            // --------------------------------
             telemetry.addData("Auto State", autoState);
-            telemetry.addData("Last Tag Dist (m)", lastTagDistanceM);
-            telemetry.addData("Last Tag Bearing (deg)", lastTagBearingDeg);
-            telemetry.addData("Target (tps)", launcherTargetTPS);
-            telemetry.addData("Left Vel (tps)", leftLauncher != null ? leftLauncher.getVelocity() : 0.0);
-            telemetry.addData("Right Vel (tps)", rightLauncher != null ? rightLauncher.getVelocity() : 0.0);
-            telemetry.addData("Left Ready", leftReady());
-            telemetry.addData("Right Ready", rightReady());
+            telemetry.addData("Manual Left State", leftState);
+            telemetry.addData("Manual Right State", rightState);
+            telemetry.addData("Tag Dist (m)", lastTagDistanceM);
+            telemetry.addData("Tag Bearing (deg)", lastTagBearingDeg);
+            telemetry.addData("Target TPS", launcherTargetTPS);
+            telemetry.addData("Left Vel", leftLauncher != null ? leftLauncher.getVelocity() : 0);
+            telemetry.addData("Right Vel", rightLauncher != null ? rightLauncher.getVelocity() : 0);
             telemetry.addData("Unjamming", unjamming);
             telemetry.update();
         }
@@ -232,14 +252,25 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
         stopAll();
     }
 
-    // ---------------- AutoShoot helpers ----------------
+    // ---------------- Launcher Init ----------------
+    private void initLauncher(DcMotorEx m, boolean reverse) {
+        if (m == null) return;
+        m.setZeroPowerBehavior(BRAKE);
+        m.setDirection(reverse ? DcMotorSimple.Direction.REVERSE : DcMotorSimple.Direction.FORWARD);
+        m.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        m.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+    }
 
+    private void setPIDF(DcMotorEx m, double f) {
+        if (m != null) m.setVelocityPIDFCoefficients(P_GAIN, I_GAIN, D_GAIN, f);
+    }
+
+    // ---------------- AutoShoot: Start / Cancel / Update ----------------
     private void startAutoShoot() {
         autoState = AutoShootState.FIND_TAG;
         autoTimer.reset();
         aimStableCount = 0;
-        telemetry.addLine("AutoShoot: FIND_TAG");
-        telemetry.update();
+        launcherTargetTPS = rpmToTicksPerSec(4000);
     }
 
     private void cancelAutoShoot() {
@@ -247,26 +278,22 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
         aimStableCount = 0;
         if (intake != null) intake.setPower(0);
         stopLaunchers();
-        telemetry.addLine("AutoShoot: CANCELLED");
-        telemetry.update();
     }
 
     private void updateAutoShoot() {
+
         switch (autoState) {
+
             case IDLE:
-                // nothing
                 break;
 
             case FIND_TAG: {
                 AprilTagDetection tag = getBestRedTag();
-                if (tag != null && tag.ftcPose != null && tag.ftcPose.range > 0) {
+                if (tag != null) {
                     lastTagDistanceM = tag.ftcPose.range;
                     lastTagBearingDeg = tag.ftcPose.bearing;
-                    aimStableCount = 0;
                     autoState = AutoShootState.AIMING;
                 } else if (autoTimer.seconds() > FIND_TIMEOUT_S) {
-                    telemetry.addLine("AutoShoot: No tag found, aborting.");
-                    telemetry.update();
                     cancelAutoShoot();
                 }
                 break;
@@ -274,26 +301,31 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
 
             case AIMING: {
                 AprilTagDetection tag = getBestRedTag();
-                if (tag != null && tag.ftcPose != null && tag.ftcPose.range > 0) {
+                if (tag != null) {
                     lastTagDistanceM = tag.ftcPose.range;
                     lastTagBearingDeg = tag.ftcPose.bearing;
                 }
 
                 if (Math.abs(lastTagBearingDeg) <= AIM_TOL_DEG) {
-                    aimStableCount = Math.min(AIM_STABLE_LOOPS, aimStableCount + 1);
+                    aimStableCount++;
                 } else {
                     aimStableCount = 0;
                 }
 
                 if (aimStableCount >= AIM_STABLE_LOOPS) {
-                    // Aim locked: compute RPM from distance and spin up
                     double rpm = computeAutoRpm(lastTagDistanceM);
+
+                    // Apply your F-gain curve
+                    applyDynamicF(rpm);
+
+                    // Convert RPM → ticks
                     launcherTargetTPS = rpmToTicksPerSec(rpm);
+
+                    // Start spinning both wheels
                     startLaunchers();
+
                     autoTimer.reset();
                     autoState = AutoShootState.SPINUP;
-                    telemetry.addData("AutoShoot: SPINUP, RPM", rpm);
-                    telemetry.update();
                 }
                 break;
             }
@@ -304,11 +336,7 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
                     if (intake != null) intake.setPower(FEED_POWER);
                     feedTimer.reset();
                     autoState = AutoShootState.FEEDING;
-                    telemetry.addLine("AutoShoot: FEEDING");
-                    telemetry.update();
                 } else if (autoTimer.seconds() > SPINUP_TIMEOUT_S) {
-                    telemetry.addLine("AutoShoot: Spin-up timeout, aborting.");
-                    telemetry.update();
                     cancelAutoShoot();
                 }
                 break;
@@ -319,8 +347,6 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
                     if (intake != null) intake.setPower(0);
                     autoTimer.reset();
                     autoState = AutoShootState.STOPPING;
-                    telemetry.addLine("AutoShoot: STOPPING");
-                    telemetry.update();
                 }
                 break;
             }
@@ -329,38 +355,41 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
                 if (autoTimer.seconds() > STOP_DELAY_SEC) {
                     stopLaunchers();
                     autoState = AutoShootState.IDLE;
-                    telemetry.addLine("AutoShoot: COMPLETE");
-                    telemetry.update();
                 }
                 break;
             }
         }
     }
 
-    // Compute RPM from tag distance (meters) — tune these numbers on the field
+    // ---------------- Auto RPM Model ----------------
     private double computeAutoRpm(double distanceM) {
-        if (distanceM <= 0) {
-            return 4000; // fallback
-        }
+        if (distanceM <= 0) return 2600; // fallback
 
-        // Example linear model: adjust a and b from testing
-        double a = 2000;   // rpm per meter
-        double b = 2000;   // base rpm
+        double a = 600;     // rpm per meter
+        double b = 2050;    // base rpm
+
         double rpm = a * distanceM + b;
 
-        // Clamp between min and max
-        rpm = Math.max(MIN_RPM, Math.min(MAX_RPM, rpm));
-        return rpm;
+        // Clamp for safety
+        return Math.max(2400, Math.min(3000, rpm));
     }
 
-    // Compute turn power from bearing (deg)
-    private double computeAimTurnPower(double bearingDeg) {
-        // Positive bearing = tag to the left
-        double kP = 0.02; // turn gain
-        double raw = -kP * bearingDeg; // negative to turn toward the tag
+    // Dynamically adjusts F-gain to match RPM
+    private void applyDynamicF(double rpm) {
+        double f = 0.02 * rpm - 39;
 
-        double min = 0.12;
-        double max = 0.4;
+        // safety clamp
+        f = Math.max(8, Math.min(20, f));
+
+        setPIDF(leftLauncher, f);
+        setPIDF(rightLauncher, f);
+    }
+
+    // ---------------- Auto Aim Turn Power ----------------
+    private double computeAimTurnPower(double bearingDeg) {
+        double kP = 0.02;
+        double raw = -kP * bearingDeg;
+        double min = 0.12, max = 0.4;
 
         if (Math.abs(raw) < min && Math.abs(bearingDeg) > AIM_TOL_DEG) {
             raw = Math.signum(raw) * min;
@@ -371,30 +400,151 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
         return raw;
     }
 
-    // ---------------- Unjam helpers ----------------
+    // ---------------- Manual Shooting ----------------
+    private void launchLeft(boolean shootRequested, boolean unjamRequested) {
+        if (leftLauncher == null || intake == null) return;
+        if (autoState != AutoShootState.IDLE) return;
 
-    private void startUnjam() {
+        switch (leftState) {
+            case IDLE:
+                if (shootRequested) {
+                    startLeftLauncher();
+                    leftTimer.reset();
+                    leftState = LaunchState.SPIN_UP;
+                }
+                break;
+
+            case SPIN_UP:
+                if (leftReady() && leftTimer.seconds() > 0.3) {
+                    intake.setPower(FEED_POWER);
+                    leftTimer.reset();
+                    leftState = LaunchState.LAUNCHING;
+                } else if (!leftReady()) {
+                    leftTimer.reset();
+                }
+                break;
+
+            case LAUNCHING:
+                if (unjamRequested) {
+                    startReverseUnjam();
+                    break;
+                }
+                if (leftTimer.seconds() > FEED_TIME_SEC) {
+                    intake.setPower(0);
+                    leftTimer.reset();
+                    leftState = LaunchState.STOPPING;
+                }
+                break;
+
+            case STOPPING:
+                if (leftTimer.seconds() > STOP_DELAY_SEC) {
+                    stopLeftLauncher();
+                    leftState = LaunchState.IDLE;
+                }
+                break;
+
+            case REVERSE:
+                if (leftTimer.seconds() > REVERSE_TIME_SEC) {
+                    stopLeftLauncher();
+                    leftState = LaunchState.IDLE;
+                }
+                break;
+        }
+    }
+
+    private void launchRight(boolean shootRequested, boolean unjamRequested) {
+        if (rightLauncher == null || intake == null) return;
+        if (autoState != AutoShootState.IDLE) return;
+
+        switch (rightState) {
+            case IDLE:
+                if (shootRequested) {
+                    startRightLauncher();
+                    rightTimer.reset();
+                    rightState = LaunchState.SPIN_UP;
+                }
+                break;
+
+            case SPIN_UP:
+                if (rightReady() && rightTimer.seconds() > 0.3) {
+                    intake.setPower(FEED_POWER);
+                    rightTimer.reset();
+                    rightState = LaunchState.LAUNCHING;
+                } else if (!rightReady()) {
+                    rightTimer.reset();
+                }
+                break;
+
+            case LAUNCHING:
+                if (unjamRequested) {
+                    startReverseUnjam();
+                    break;
+                }
+                if (rightTimer.seconds() > FEED_TIME_SEC) {
+                    intake.setPower(0);
+                    rightTimer.reset();
+                    rightState = LaunchState.STOPPING;
+                }
+                break;
+
+            case STOPPING:
+                if (rightTimer.seconds() > STOP_DELAY_SEC) {
+                    stopRightLauncher();
+                    rightState = LaunchState.IDLE;
+                }
+                break;
+
+            case REVERSE:
+                if (rightTimer.seconds() > REVERSE_TIME_SEC) {
+                    stopRightLauncher();
+                    rightState = LaunchState.IDLE;
+                }
+                break;
+        }
+    }
+
+    // ---------------- Manual Launcher Control ----------------
+    private void startLeftLauncher() {
+        double adjusted = getVoltageCompensatedVelocity(launcherTargetTPS);
+        leftLauncher.setVelocity(adjusted);
+    }
+
+    private void startRightLauncher() {
+        double adjusted = getVoltageCompensatedVelocity(launcherTargetTPS);
+        rightLauncher.setVelocity(adjusted);
+    }
+
+    private void stopLeftLauncher() {
+        leftLauncher.setPower(0);
+    }
+
+    private void stopRightLauncher() {
+        rightLauncher.setPower(0);
+    }
+
+    // ---------------- Unjam ----------------
+    private void startReverseUnjam() {
         unjamming = true;
         unjamTimer.reset();
-        if (intake != null) intake.setPower(0);
         if (leftLauncher != null)  leftLauncher.setPower(-0.4);
         if (rightLauncher != null) rightLauncher.setPower(-0.4);
+        if (intake != null) intake.setPower(-1.0);
+        leftState = LaunchState.REVERSE;
+        rightState = LaunchState.REVERSE;
     }
 
     private void updateUnjam() {
         if (unjamTimer.seconds() > REVERSE_TIME_SEC) {
-            if (leftLauncher != null)  leftLauncher.setPower(0);
-            if (rightLauncher != null) rightLauncher.setPower(0);
             unjamming = false;
+            stopLaunchers();
+            if (intake != null) intake.setPower(0);
         }
     }
 
-    // ---------------- Vision helpers ----------------
-
+    // ---------------- Vision ----------------
     private void initAprilTags() {
         tagProcessor = new AprilTagProcessor.Builder()
                 .setDrawTagID(true)
-                .setDrawTagOutline(true)
                 .setDrawAxes(true)
                 .build();
 
@@ -408,63 +558,42 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
     private AprilTagDetection getBestRedTag() {
         if (tagProcessor == null) return null;
 
-        AprilTagDetection best = null;
-
         for (AprilTagDetection tag : tagProcessor.getDetections()) {
-            if (tag.metadata == null || tag.ftcPose == null) continue;
-            int id = tag.metadata.id;
-
-            // Red backboard tags are usually 1, 2, 3; prefer center (2)
-            if (id == RED_CENTER_TAG_ID) {
-                if (tag.ftcPose.range > 0) {
-                    return tag;
-                }
-            } else if (id == 1 || id == 3) {
-                if (tag.ftcPose.range > 0 && best == null) {
-                    best = tag;
-                }
+            if (tag.metadata != null && tag.ftcPose != null) {
+                int id = tag.metadata.id;
+                if (id == RED_CENTER_TAG_ID && tag.ftcPose.range > 0) return tag;
+                if ((id == 1 || id == 3) && tag.ftcPose.range > 0) return tag;
             }
         }
-        return best;
+        return null;
     }
 
-    // ---------------- Launcher helpers ----------------
-
+    // ---------------- Launcher Helpers ----------------
     private void startLaunchers() {
-        if (leftLauncher != null) {
-            double adjusted = getVoltageCompensatedVelocity(launcherTargetTPS);
-            leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            leftLauncher.setVelocity(adjusted);
-        }
-        if (rightLauncher != null) {
-            double adjusted = getVoltageCompensatedVelocity(launcherTargetTPS);
-            rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            rightLauncher.setVelocity(adjusted);
-        }
+        if (leftLauncher != null)
+            leftLauncher.setVelocity(getVoltageCompensatedVelocity(launcherTargetTPS));
+        if (rightLauncher != null)
+            rightLauncher.setVelocity(getVoltageCompensatedVelocity(launcherTargetTPS));
+
         leftReadyCount = 0;
         rightReadyCount = 0;
     }
 
     private void stopLaunchers() {
-        if (leftLauncher != null) {
-            leftLauncher.setPower(0);
-        }
-        if (rightLauncher != null) {
-            rightLauncher.setPower(0);
-        }
+        if (leftLauncher != null) leftLauncher.setPower(0);
+        if (rightLauncher != null) rightLauncher.setPower(0);
     }
 
     private double getVoltageCompensatedVelocity(double targetTicksPerSec) {
         double nominalVoltage = 13.0;
         double currentVoltage = 12.0;
+
         try {
             currentVoltage = hardwareMap.voltageSensor.iterator().next().getVoltage();
-        } catch (Exception e) {
-            // ignore, fallback to 12V
-        }
-        if (currentVoltage <= 0.0) {
-            currentVoltage = 12.0;
-        }
+        } catch (Exception ignored) {}
+
+        if (currentVoltage <= 0) currentVoltage = 12.0;
+
         return targetTicksPerSec * (nominalVoltage / currentVoltage);
     }
 
@@ -484,8 +613,7 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
         return rightReadyCount >= READY_CYCLES;
     }
 
-    // ---------------- Drive helpers ----------------
-
+    // ---------------- Drive Helpers ----------------
     private void mecanumDrive(double y, double x, double rx, double scale) {
         if (leftFront == null) return;
 
@@ -509,9 +637,7 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
 
     private void setBrake(DcMotor... motors) {
         for (DcMotor m : motors) {
-            if (m != null) {
-                m.setZeroPowerBehavior(BRAKE);
-            }
+            if (m != null) m.setZeroPowerBehavior(BRAKE);
         }
     }
 
@@ -521,7 +647,7 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
         setPower(0, 0, 0, 0);
     }
 
-    // ---------------- Safe Getters ----------------
+    // ---------------- Hardware Getters ----------------
     private DcMotor getMotor(String name) {
         try {
             return hardwareMap.get(DcMotor.class, name);
