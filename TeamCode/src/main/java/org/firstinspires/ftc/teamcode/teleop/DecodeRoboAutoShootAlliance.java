@@ -14,8 +14,11 @@ import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 
-@TeleOp(name = "Decode Robo AutoShoot Red", group = "RoboAvengers")
-public class DecodeRoboAutoShootRed extends LinearOpMode {
+import java.util.ArrayList;
+import java.util.List;
+
+@TeleOp(name = "Decode Robo AutoShoot Alliance", group = "RoboAvengers")
+public class DecodeRoboAutoShootAlliance extends LinearOpMode {
 
     // ---------------- Drive ----------------
     private DcMotor leftFront, rightFront, leftBack, rightBack;
@@ -42,10 +45,10 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
     private int leftReadyCount = 0, rightReadyCount = 0;
 
     // Timings
-    private static final double FEED_TIME_SEC   = 1.0;
-    private static final double STOP_DELAY_SEC  = 0.25;
+    private static final double FEED_TIME_SEC    = 1.0;
+    private static final double STOP_DELAY_SEC   = 0.25;
     private static final double REVERSE_TIME_SEC = 1.0;
-    private static final double FEED_POWER      = 1.0;
+    private static final double FEED_POWER       = 1.0;
 
     // ---------------- Manual FSM ----------------
     private enum LaunchState { IDLE, SPIN_UP, LAUNCHING, STOPPING, REVERSE }
@@ -62,14 +65,26 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
     private ElapsedTime autoTimer = new ElapsedTime();
     private ElapsedTime feedTimer = new ElapsedTime();
 
-    // AprilTag / aiming
-    private static final int RED_CENTER_TAG = 2;
-    private static final double AIM_TOL_DEG = 2.0;
-    private static final int AIM_STABLE_LOOPS = 5;
+    // ---------------- Alliance + AprilTag IDs ----------------
+    private boolean allianceSelected = false;
+    private boolean isRedAlliance    = false;   // value only matters if allianceSelected = true
+
+    private static final int RED_CENTER_TAG  = 24;
+    private static final int BLUE_CENTER_TAG = 20;
+
+    private static final double AIM_TOL_DEG = 3.5;
+    private static final int AIM_STABLE_LOOPS = 2;
     private int aimStableCount = 0;
 
     private double lastTagDistanceM = -1.0;
     private double lastTagBearingDeg = 0.0;
+
+    // ---------------- Strong Smoothing for AutoAim ----------------
+    private double smoothedDistance = -1;
+    private double smoothedBearing = 0;
+
+    private double lastRawDistance = -1;
+    private static final double MAX_DISTANCE_JUMP = 0.20;   // 20cm (8 inches) spike rejection
 
     // Vision
     private VisionPortal visionPortal;
@@ -109,9 +124,45 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
         // AprilTags
         initAprilTags();
 
-        telemetry.addLine("TeleOp READY");
+        // ---------------- Alliance Select BEFORE start ----------------
+        telemetry.addLine("INIT: Select Alliance for AutoShoot");
+        telemetry.addLine("Gamepad1 B = RED (tag 24)");
+        telemetry.addLine("Gamepad1 A = BLUE (tag 20)");
+        telemetry.addLine("If no selection -> AutoShoot DISABLED");
         telemetry.update();
-        waitForStart();
+
+        while (!isStarted() && !isStopRequested()) {
+            // NOTE: This is currently A = RED, B = BLUE in code
+            if (gamepad1.a) {
+                isRedAlliance = true;
+                allianceSelected = true;
+            }
+            if (gamepad1.b) {
+                isRedAlliance = false;
+                allianceSelected = true;
+            }
+
+            telemetry.addData("Alliance",
+                    allianceSelected
+                            ? (isRedAlliance ? "RED (ID 24)" : "BLUE (ID 20)")
+                            : "NOT SELECTED");
+            telemetry.addData("AutoShoot", allianceSelected ? "ENABLED" : "DISABLED");
+            telemetry.update();
+        }
+
+        if (isStopRequested()) return;
+
+        telemetry.clearAll();
+        if (!allianceSelected) {
+            telemetry.addLine("WARNING: NO ALLIANCE SELECTED");
+            telemetry.addLine("AutoShoot WILL NOT activate this match.");
+        } else {
+            telemetry.addData("Alliance Locked", isRedAlliance ? "RED (24)" : "BLUE (20)");
+            telemetry.addLine("AutoShoot ENABLED");
+        }
+        telemetry.update();
+
+        if (isStopRequested()) return;
 
         // Set PIDF after start
         setPIDF(leftLauncher, FIXED_F);
@@ -142,9 +193,9 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
                     gamepad1.left_bumper  ? 0.4 : 0.7;
 
             if (autoState == AutoShootState.AIMING) {
-                AprilTagDetection tag = getBestRedTag();
+                AprilTagDetection tag = getBestAllianceTag();
                 if (tag != null && tag.ftcPose != null) {
-                    lastTagDistanceM = tag.ftcPose.range;
+                    lastTagDistanceM  = tag.ftcPose.range;
                     lastTagBearingDeg = tag.ftcPose.bearing;
                 }
                 double turnPower = aimTurnPower(lastTagBearingDeg);
@@ -165,7 +216,7 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
 
                 double in  = gamepad1.right_trigger;
                 double out = gamepad1.left_trigger;
-                double p   = (in - out) * 0.8;
+                double p   = (in - out) * 1.0;
 
                 if (Math.abs(in) < 0.02 && Math.abs(out) < 0.02) {
                     p = 0;
@@ -176,6 +227,7 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
 
             // --------------- AUTO SHOOT START (D-PAD UP) ---------------
             if (gamepad2.dpad_up
+                    && allianceSelected                 // SAFETY: requires A/B at init
                     && autoState == AutoShootState.IDLE
                     && !unjamming) {
 
@@ -200,12 +252,12 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
             // --------------- MANUAL PRESETS (A/B/Y) ---------------
             if (autoState == AutoShootState.IDLE && !unjamming) {
 
-                // A = SHORT (2800 rpm)
+                // A = SHORT (2900 rpm)
                 if (gamepad2.a) {
                     launcherTargetTPS = rpmToTPS(2900);
                     setPIDF(leftLauncher, FIXED_F);
                     setPIDF(rightLauncher, FIXED_F);
-                    telemetry.addLine("Preset: SHORT (2800 rpm, F=18)");
+                    telemetry.addLine("Preset: SHORT (2900 rpm, F=18)");
                 }
 
                 // B = MID (3000 rpm)
@@ -218,7 +270,7 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
 
                 // Y = LONG (3500 rpm)
                 if (gamepad2.y) {
-                    launcherTargetTPS = rpmToTPS(3600);
+                    launcherTargetTPS = rpmToTPS(3500);
                     setPIDF(leftLauncher, FIXED_F);
                     setPIDF(rightLauncher, FIXED_F);
                     telemetry.addLine("Preset: LONG (3500 rpm, F=18)");
@@ -227,6 +279,9 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
 
             // --------------- MANUAL HOLD-SPIN (TRIGGERS) ---------------
             if (autoState == AutoShootState.IDLE && !unjamming) {
+
+                // NEW: Update RPM automatically based on distance
+                updateManualDistanceRPM();
 
                 // Left launcher
                 if (leftLauncher != null && leftState == LaunchState.IDLE) {
@@ -275,6 +330,11 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
             updateAutoShoot();
 
             // --------------- TELEMETRY ---------------
+            telemetry.addData("Alliance",
+                    allianceSelected
+                            ? (isRedAlliance ? "RED (24)" : "BLUE (20)")
+                            : "NOT SELECTED");
+            telemetry.addData("AutoShoot", allianceSelected ? "ENABLED" : "DISABLED");
             telemetry.addData("AutoState", autoState);
             telemetry.addData("LeftState", leftState);
             telemetry.addData("RightState", rightState);
@@ -283,7 +343,13 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
             telemetry.addData("RightVel", rightLauncher != null ? rightLauncher.getVelocity() : 0);
             telemetry.addData("Bearing",  lastTagBearingDeg);
             telemetry.addData("Distance", lastTagDistanceM);
+            telemetry.addData("SmoothedBearing", smoothedBearing);
+            telemetry.addData("SmoothedDistance", smoothedDistance);
+            telemetry.addData("AimStableCount", aimStableCount);
             telemetry.addData("Unjamming", unjamming);
+            if (!allianceSelected) {
+                telemetry.addLine("AUTO SHOOT DISABLED – NO ALLIANCE SELECTED");
+            }
             telemetry.update();
         }
 
@@ -298,12 +364,16 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
         autoState = AutoShootState.FIND_TAG;
         autoTimer.reset();
         aimStableCount = 0;
+        smoothedDistance = -1;
+        smoothedBearing = 0;
+        lastRawDistance = -1;
     }
 
     private void cancelAutoShoot() {
         autoState = AutoShootState.IDLE;
         if (intake != null) intake.setPower(0);
         stopLaunch();
+        aimStableCount = 0;
     }
 
     private void updateAutoShoot() {
@@ -312,45 +382,116 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
             case IDLE:
                 return;
 
-            case FIND_TAG:
-                AprilTagDetection tag = getBestRedTag();
-                if (tag != null) {
+            case FIND_TAG: {
+                AprilTagDetection tag = getBestAllianceTag();
+                if (tag != null && tag.ftcPose != null) {
                     lastTagDistanceM  = tag.ftcPose.range;
                     lastTagBearingDeg = tag.ftcPose.bearing;
+                    autoTimer.reset();              // reset aim timer when we first see the tag
+                    aimStableCount = 0;
                     autoState = AutoShootState.AIMING;
                 } else if (autoTimer.seconds() > 2.0) {
                     cancelAutoShoot();
                 }
                 return;
+            }
 
-            case AIMING:
-                AprilTagDetection tag2 = getBestRedTag();
-                if (tag2 != null) {
-                    lastTagDistanceM  = tag2.ftcPose.range;
-                    lastTagBearingDeg = tag2.ftcPose.bearing;
+            case AIMING: {
+
+                AprilTagDetection tag2 = getBestAllianceTag();
+                if (tag2 != null && tag2.ftcPose != null) {
+
+                    double rawDistInches = tag2.ftcPose.range;
+
+                    double rawDist = rawDistInches * 0.0254;   // convert inches → meters
+
+                    double rawBear = tag2.ftcPose.bearing;
+
+                    // ---------------- Spike Rejection (distance) ----------------
+                    if (lastRawDistance > 0 && Math.abs(rawDist - lastRawDistance) > MAX_DISTANCE_JUMP) {
+                        // too large of a jump → ignore this frame
+                        break;
+                    }
+                    lastRawDistance = rawDist;
+
+                    // ---------------- Strong Smoothing ----------------
+                    // Distance
+                    if (smoothedDistance < 0) {
+                        smoothedDistance = rawDist;     // initialize on first good frame
+                    } else {
+                        smoothedDistance = 0.7 * smoothedDistance + 0.3 * rawDist;
+                    }
+
+                    // Bearing
+                    smoothedBearing = 0.7 * smoothedBearing + 0.3 * rawBear;
+
+                    // Assign to your normal variables for telemetry + turn logic
+                    lastTagDistanceM  = smoothedDistance;
+                    lastTagBearingDeg = smoothedBearing;
+                } else {
+                    // If lost → go back and search again
+                    autoState = AutoShootState.FIND_TAG;
+                    autoTimer.reset();
+                    aimStableCount = 0;
+                    return;
                 }
 
-                if (Math.abs(lastTagBearingDeg) <= AIM_TOL_DEG) {
+                double elapsedAim = autoTimer.seconds();
+
+                // ---------------- Smart "near enough" fallback ----------------
+                // If we've been aiming for a bit and we're close to centered,
+                // force the alignment so we don't get stuck forever.
+                if (Math.abs(smoothedBearing) < 7.0 && elapsedAim > 1.2) {
+                    aimStableCount = AIM_STABLE_LOOPS;
+                }
+
+                // ---------------- Normal Stability Check ----------------
+                if (Math.abs(smoothedBearing) <= 2.0) {   // widened tolerance for noise
                     aimStableCount++;
                 } else {
                     aimStableCount = 0;
                 }
 
-                if (aimStableCount >= AIM_STABLE_LOOPS) {
-                    double rpm = 2050 + 600 * lastTagDistanceM;
-                    rpm = Math.max(2400, Math.min(3000, rpm));
+                // ---------------- Final timeout safety ----------------
+                // If we've been trying to aim for > 2.0 seconds, just shoot.
+                if (elapsedAim > 2.0) {
+                    aimStableCount = AIM_STABLE_LOOPS;
+                }
 
-                    launcherTargetTPS = rpmToTPS(rpm);
+                // ---------------- When stable, choose RPM and shoot ----------------
+                if (aimStableCount >= 1) {      // only 1 stable frame needed now
+                    double d = smoothedDistance;
+
+                    // --- REAL TEAM CALIBRATED BUCKETS ---
+                    // short: under 3 ft (0.9144 m)
+                    // mid:   3 ft to 9 ft (0.9144 to 2.7432 m)
+                    // long:  9+ ft (2.7432+ m)
+
+                    if (d < 0.9144) {
+                        launcherTargetTPS = rpmToTPS(2900);    // SHORT
+                    }
+                    else if (d < 2.7432) {
+                        launcherTargetTPS = rpmToTPS(3000);    // MID
+                    }
+                    else {
+                        launcherTargetTPS = rpmToTPS(3500);    // LONG
+                    }
+
+                    // Apply motor PIDF gain
                     setPIDF(leftLauncher, FIXED_F);
                     setPIDF(rightLauncher, FIXED_F);
+
+                    // Spin-up both launchers
                     startLaunch();
 
                     autoTimer.reset();
                     autoState = AutoShootState.SPINUP;
                 }
-                return;
 
-            case SPINUP:
+                return;
+            }
+
+            case SPINUP: {
                 boolean ready = leftReady() && rightReady();
                 if (ready && autoTimer.seconds() > 0.3) {
                     if (intake != null) intake.setPower(FEED_POWER);
@@ -360,6 +501,7 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
                     cancelAutoShoot();
                 }
                 return;
+            }
 
             case FEEDING:
                 if (feedTimer.seconds() > FEED_TIME_SEC) {
@@ -374,7 +516,6 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
                     stopLaunch();
                     autoState = AutoShootState.IDLE;
                 }
-                return;
         }
     }
 
@@ -557,6 +698,34 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
     }
 
     // ============================================================
+    // MANUAL DISTANCE-BASED RPM LOGIC
+    // ============================================================
+    private void updateManualDistanceRPM() {
+        // Only update when we actually see the tag
+        AprilTagDetection tag = getBestAllianceTag();
+        if (tag == null || tag.ftcPose == null) return;
+
+        // Convert inches → meters
+        double d = tag.ftcPose.range * 0.0254;
+
+        // Same buckets you tested
+        if (d < 0.9144) {
+            launcherTargetTPS = rpmToTPS(2900);   // SHORT
+        }
+        else if (d < 2.7432) {
+            launcherTargetTPS = rpmToTPS(3000);   // MID
+        }
+        else {
+            launcherTargetTPS = rpmToTPS(3500);   // LONG
+        }
+
+        // Refresh PIDF
+        setPIDF(leftLauncher, FIXED_F);
+        setPIDF(rightLauncher, FIXED_F);
+    }
+
+
+    // ============================================================
     // UNJAM (X)
     // ============================================================
 
@@ -602,28 +771,58 @@ public class DecodeRoboAutoShootRed extends LinearOpMode {
                 .build();
     }
 
-    private AprilTagDetection getBestRedTag() {
+    /**
+     * Returns the best tag for the CURRENT alliance:
+     *   - Red  -> ID 24
+     *   - Blue -> ID 20
+     * If no alliance selected, returns null (safety).
+     */
+    private AprilTagDetection getBestAllianceTag() {
+        if (!allianceSelected) return null;    // SAFETY: no alliance, no tag
         if (tagProcessor == null) return null;
-        for (AprilTagDetection tag : tagProcessor.getDetections()) {
-            if (tag.metadata != null && tag.ftcPose != null) {
-                int id = tag.metadata.id;
-                if (id == RED_CENTER_TAG) return tag;
-                if (id == 1 || id == 3)   return tag;
+
+        int targetId = isRedAlliance ? RED_CENTER_TAG : BLUE_CENTER_TAG;
+
+        // Snapshot list to avoid ConcurrentModificationException
+        List<AprilTagDetection> detections =
+                new ArrayList<>(tagProcessor.getDetections());
+
+        for (AprilTagDetection tag : detections) {
+            if (tag.ftcPose != null && tag.id == targetId) {
+                return tag;
             }
         }
         return null;
     }
 
     private double aimTurnPower(double bearingDeg) {
-        double kP  = 0.02;
-        double turn = -kP * bearingDeg;
-        double min = 0.12, max = 0.4;
 
-        if (Math.abs(turn) < min && Math.abs(bearingDeg) > AIM_TOL_DEG) {
-            turn = Math.signum(turn) * min;
+        // Stronger proportional control
+        double kP = 0.035;   // was 0.02 → turning was too weak
+
+        // Compute raw turn power
+        double turn = -kP * bearingDeg;
+
+        // Minimum power so robot actually MOVES
+        double minPower = 0.14;   // was 0.12 but too weak after smoothing
+
+        // Maximum turn power
+        double maxPower = 0.45;   // small boost from 0.40
+
+        // Apply minimum power threshold
+        if (Math.abs(turn) < minPower && Math.abs(bearingDeg) > 3.0) {
+            // far away → use minimum
+            turn = Math.signum(turn) * minPower;
         }
-        if (Math.abs(turn) > max) {
-            turn = Math.signum(turn) * max;
+
+        // Scale down as we get close (< 10 deg)
+        if (Math.abs(bearingDeg) < 10) {
+            turn *= 0.6;  // smoother final approach
+        }
+
+        // Cap the power
+        if (Math.abs(turn) > maxPower) {
+            turn = Math.signum(turn) * maxPower;
         }
 
         return turn;
