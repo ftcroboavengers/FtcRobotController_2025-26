@@ -19,7 +19,7 @@ import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import java.util.ArrayList;
 import java.util.List;
 
-@Autonomous(name = "Back + AutoShoot Red Dec", group = "RoboAvengers")
+@Autonomous(name = "Back + AutoShoot Red", group = "RoboAvengers")
 public class BackFireRedDec6 extends LinearOpMode {
 
     // ---------------- Drive Motors ----------------
