@@ -39,7 +39,7 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
 
     // ---------------- AutoShoot RPM Buckets ----------------
     private static final double TPR = 28.0;  // ticks per revolution
-    private static double rpmToTPS(double rpm) { return rpm * TPR / 60.0; }
+    private static double rpmToTPS(double rpm){ return rpm * TPR / 60.0; }
 
     private static final double SHORT_RPM = 2900;
     private static final double MID_RPM   = 3000;
@@ -47,7 +47,7 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
 
     private static final double FIXED_F = 18.0;
 
-    // Target TPS for ready-check
+    // Track target TPS for readyToShoot()
     private double launcherTargetTPS = rpmToTPS(MID_RPM);
 
     // ---------------- Tag IDs (Center) ----------------
@@ -56,12 +56,13 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
 
     // ---------------- AutoShoot State ----------------
     private enum AutoShootState { FIND, AIM, SPINUP, FEED, STOP }
-    private AutoShootState autoShootState = AutoShootState.FIND;
+    private AutoShootState autoShootState;
 
     // Smoothing
     private double smoothedDistanceM = -1;
     private double smoothedYawDeg    = 0;
     private double lastRawDistM      = -1;
+
     private static final double MAX_DISTANCE_JUMP_M = 0.20; // 20 cm spike rejection
 
     private int aimStableCount = 0;
@@ -76,6 +77,8 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
     // ---------------- Main Auto State Machine ----------------
     private enum AutoState { AUTOSHOOT, FORWARD_30, DONE }
     private AutoState state = AutoState.AUTOSHOOT;
+    private AutoState lastState = null;
+    private double stateStartTime = 0;
 
     private final ElapsedTime autoStateTimer = new ElapsedTime();
 
@@ -102,21 +105,21 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
         if (rightFront != null) rightFront.setDirection(DcMotorSimple.Direction.FORWARD);
         if (rightBack  != null) rightBack.setDirection(DcMotorSimple.Direction.FORWARD);
 
-        if (intake != null) intake.setDirection(DcMotorSimple.Direction.REVERSE);
+        if (intake != null) {
+            intake.setDirection(DcMotorSimple.Direction.FORWARD);
+            intake.setZeroPowerBehavior(BRAKE);
+        }
 
-        setBrake(leftFront, rightFront, leftBack, rightBack);
-
-        // Launchers
-        initLauncher(leftLauncher, true);
+        initLauncher(leftLauncher,  true);
         initLauncher(rightLauncher, false);
 
-        // ---------------- Pinpoint Init ----------------
+        // Pinpoint
         initPinpoint();
 
-        // ---------------- Vision Init ----------------
+        // Vision
         initAprilTags();
 
-        telemetry.addLine("READY: Forward + AutoShoot AnyTag");
+        telemetry.addLine("READY: Forward + AutoShoot AnyTag (LONG only)");
         telemetry.update();
 
         waitForStart();
@@ -128,8 +131,11 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
         // ---------------- MAIN AUTO LOOP ----------------
         while (opModeIsActive() && state != AutoState.DONE) {
 
-            if (pinpoint != null) {
-                pinpoint.update();
+            if (pinpoint != null) pinpoint.update();
+
+            if (state != lastState) {
+                stateStartTime = getRuntime();
+                lastState = state;
             }
 
             switch (state) {
@@ -139,7 +145,6 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
                 // ----------------------------------------------------
                 case AUTOSHOOT:
                     if (runAutoShootStep()) {
-                        // AutoShoot finished (either shot or bailed)
                         stopLaunch();
                         stopDrive();
                         state = AutoState.FORWARD_30;
@@ -154,16 +159,20 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
                     if (moveToX(30.0) || autoStateTimer.seconds() > 4.0) {
                         stopDrive();
                         state = AutoState.DONE;
+                        autoStateTimer.reset();
                     }
                     break;
 
-                default:
-                    state = AutoState.DONE;
+                // ----------------------------------------------------
+                // DONE
+                // ----------------------------------------------------
+                case DONE:
+                    stopDrive();
                     break;
             }
 
             // Telemetry
-            telemetry.addData("AutoState", state);
+            telemetry.addData("State", state);
             telemetry.addData("AutoShootState", autoShootState);
 
             if (pinpoint != null) {
@@ -182,7 +191,7 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
     }
 
     // =========================================================================
-    // AUTO SHOOT SYSTEM  (Red OR Blue tag)
+    // AUTO SHOOT SYSTEM  (Red OR Blue center tag, LONG DISTANCE ONLY)
     // =========================================================================
 
     private void resetAutoShootFSM() {
@@ -260,9 +269,9 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
                     aimStableCount = 2;
                 }
 
-                // When stable, pick RPM & spin up
+                // When stable, pick RPM & spin up (LONG ONLY)
                 if (aimStableCount >= 2) {
-                    pickRPM(smoothedDistanceM);
+                    pickRPM(smoothedDistanceM);  // now always LONG_RPM
                     startLaunch();
                     autoShootState = AutoShootState.SPINUP;
                     stateTimer.reset();
@@ -301,7 +310,7 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
                 break;
 
             // --------------------------------------------------------
-            // STOP: stop launchers and report done
+            // STOP: shutdown launcher and declare AutoShoot done
             // --------------------------------------------------------
             case STOP:
                 stopLaunch();
@@ -371,44 +380,38 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
         return true;
     }
 
+    // ---------------- Aiming Turn Helper ----------------
+
     private double aimTurnPower(double yawDeg) {
-        double kP  = 0.03;          // proportional gain
-        double turn = -kP * yawDeg; // positive yaw -> turn opposite direction
+        // Simple P-control with minimum power to overcome static friction
+        double kP = 0.035;
+        double turn = -kP * yawDeg;
 
-        double min = 0.12;  // minimum power to overcome friction
-        double max = 0.40;  // cap
+        double min = 0.14;
+        double max = MAX_TURN_POWER;
 
-        // If we're far off, enforce a minimum turn power
-        if (Math.abs(turn) < min && Math.abs(yawDeg) > 2.0) {
+        if (Math.abs(turn) < min && Math.abs(yawDeg) > 3.0) {
             turn = Math.signum(turn) * min;
         }
 
-        // As we get closer to center, soften the turn
-        if (Math.abs(yawDeg) < 8.0) {
+        // Reduce power when we're close
+        if (Math.abs(yawDeg) < 10.0) {
             turn *= 0.6;
         }
 
-        // Clamp
-        if (Math.abs(turn) > max) {
-            turn = Math.signum(turn) * max;
-        }
+        // Clamp to max
+        if (turn > max)  turn = max;
+        if (turn < -max) turn = -max;
 
         return turn;
     }
 
-    // ---------------- RPM Bucketing ----------------
+    // ---------------- RPM Bucketing (LONG ONLY) ----------------
 
     private void pickRPM(double distM) {
-        // short: < 3 ft (0.9144 m)
-        // mid:   3–9 ft (0.9144–2.7432 m)
-        // long:  > 9 ft (2.7432+ m)
-        if (distM < 0.9144) {
-            setRPM(SHORT_RPM);
-        } else if (distM < 2.7432) {
-            setRPM(MID_RPM);
-        } else {
-            setRPM(LONG_RPM);
-        }
+        // Force LONG-distance shot only, regardless of measured distance.
+        // We still pass distM around for telemetry elsewhere.
+        setRPM(LONG_RPM);
     }
 
     private void setRPM(double rpm) {
@@ -424,18 +427,22 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
     }
 
     private boolean readyToShoot() {
-        if (leftLauncher == null || rightLauncher == null) return true;
+        if (leftLauncher == null || rightLauncher == null) return false;
 
-        double lv = leftLauncher.getVelocity();
-        double rv = rightLauncher.getVelocity();
+        double leftV  = leftLauncher.getVelocity();
+        double rightV = rightLauncher.getVelocity();
 
-        return Math.abs(lv - launcherTargetTPS) < 200 &&
-                Math.abs(rv - launcherTargetTPS) < 200;
+        double errL = Math.abs(leftV  - launcherTargetTPS);
+        double errR = Math.abs(rightV - launcherTargetTPS);
+
+        double tolTPS = 40.0;
+
+        return errL < tolTPS && errR < tolTPS;
     }
 
     private void startLaunch() {
-        // Re-assert velocity in case battery sagged
-        setRPM(launcherTargetTPS * 60.0 / TPR);
+        double rpm = launcherTargetTPS * 60.0 / TPR;
+        setRPM(rpm);
     }
 
     private void stopLaunch() {
@@ -453,6 +460,7 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
     }
 
     private boolean moveToX(double targetXInches) {
+
         if (pinpoint == null) {
             // If no odometry, just drive forward a bit as a fallback
             drive(0.3, 0, 0);
@@ -469,35 +477,41 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
 
         power = Math.max(-MAX_DRIVE_POWER, Math.min(MAX_DRIVE_POWER, power));
 
-        // Forward/back only
-        drive(power, 0, 0);
-
+        // Wrong-way detection (X not changing in right direction)
         double dx = currentX - lastX;
-        if (Math.abs(power) > 0.05 && Math.abs(dx) > 0.01) {
-            boolean wrong = Math.signum(power) != Math.signum(dx);
-            wrongWayCountX = wrong ? wrongWayCountX + 1 : 0;
-            if (wrongWayCountX > 15) {
-                // Odometry looks inverted; bail out
+        if (Math.signum(dx) != Math.signum(error) && Math.abs(dx) > 0.05 && Math.abs(error) > 1.0) {
+            wrongWayCountX++;
+            if (wrongWayCountX > 10) {
+                // Stop if clearly going wrong-way
+                drive(0, 0, 0);
                 return true;
             }
         } else {
             wrongWayCountX = 0;
         }
-
         lastX = currentX;
-        return Math.abs(error) < 2.0;
+
+        // If within 1 inch, stop
+        if (Math.abs(error) < 1.0) {
+            drive(0, 0, 0);
+            return true;
+        }
+
+        // Drive forward/backward only
+        drive(power, 0, 0);
+        return false;
     }
 
-    // Basic mecanum drive wrapper: fwd/strafe/turn in [-1, 1]
     private void drive(double fwd, double strafe, double turn) {
+
         double fl = fwd + strafe + turn;
-        double bl = fwd - strafe + turn;
         double fr = fwd - strafe - turn;
+        double bl = fwd - strafe + turn;
         double br = fwd + strafe - turn;
 
-        // Normalize if needed
         double max = Math.max(Math.max(Math.abs(fl), Math.abs(fr)),
                 Math.max(Math.abs(bl), Math.abs(br)));
+
         if (max > 1.0) {
             fl /= max;
             fr /= max;
@@ -505,15 +519,6 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
             br /= max;
         }
 
-        fl *= MAX_DRIVE_POWER;
-        fr *= MAX_DRIVE_POWER;
-        bl *= MAX_DRIVE_POWER;
-        br *= MAX_DRIVE_POWER;
-
-        setPower(fl, fr, bl, br);
-    }
-
-    private void setPower(double fl, double fr, double bl, double br) {
         if (leftFront  != null) leftFront.setPower(fl);
         if (rightFront != null) rightFront.setPower(fr);
         if (leftBack   != null) leftBack.setPower(bl);
@@ -521,7 +526,7 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
     }
 
     private void stopDrive() {
-        setPower(0, 0, 0, 0);
+        drive(0, 0, 0);
     }
 
     // =========================================================================
@@ -578,19 +583,23 @@ public class ForwardAuto_AutoShootAnyAlliance extends LinearOpMode {
     // MISC HELPERS
     // =========================================================================
 
-    private void setBrake(DcMotor... motors) {
-        for (DcMotor m : motors) {
+    private DcMotor getMotor(String name) {
+        try {
+            DcMotor m = hardwareMap.get(DcMotor.class, name);
             if (m != null) m.setZeroPowerBehavior(BRAKE);
+            return m;
+        } catch (Exception e) {
+            return null;
         }
     }
 
-    private DcMotor getMotor(String name) {
-        try { return hardwareMap.get(DcMotor.class, name); }
-        catch (Exception e) { return null; }
-    }
-
     private DcMotorEx getMotorEx(String name) {
-        try { return hardwareMap.get(DcMotorEx.class, name); }
-        catch (Exception e) { return null; }
+        try {
+            DcMotorEx m = hardwareMap.get(DcMotorEx.class, name);
+            if (m != null) m.setZeroPowerBehavior(BRAKE);
+            return m;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
