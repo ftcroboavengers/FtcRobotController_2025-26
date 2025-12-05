@@ -146,7 +146,7 @@ public class BackFireBlueDec6_Simplified extends LinearOpMode {
 
                 // BLUE TURN IS +45°
                 case TURN_LEFT:
-                    if (turnToHeading(+45) || timeInState() > 3.0) {
+                    if (turnToHeading(+45) || timeInState() > 4.0) {
                         stopDrive();
                         sleep(200);
                         state = AutoState.FORWARD_INTAKE;
@@ -173,7 +173,7 @@ public class BackFireBlueDec6_Simplified extends LinearOpMode {
 
                 // Turn back to 0°
                 case AIM_FINAL:
-                    if (turnToHeading(0) || timeInState() > 3.0) {
+                    if (turnToHeading(0) || timeInState() > 4.0) {
                         stopDrive();
                         sleep(200);
                         resetShoot();
